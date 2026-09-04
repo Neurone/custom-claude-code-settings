@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Rendered by scripts/install-or-update.sh: @@ placeholders are substituted
+     and the result is written to ~/Library/LaunchAgents/. Do not edit the
+     installed copy, edit this template and re-run the installer. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>@@LABEL@@</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>@@BIN_DIR@@/enforce-custom-claude-code-settings.py</string>
+    </array>
+
+    <!-- Run as soon as either file changes on disk. -->
+    <key>WatchPaths</key>
+    <array>
+        <string>@@SETTINGS_PATH@@</string>
+        <string>@@ENFORCED_PATH@@</string>
+    </array>
+
+    <!-- Safety net in case a change slips past WatchPaths. Cheap: the script
+         exits without writing when nothing differs. -->
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>StandardOutPath</key>
+    <string>@@LOG_DIR@@/enforce.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>@@LOG_DIR@@/enforce.err.log</string>
+</dict>
+</plist>

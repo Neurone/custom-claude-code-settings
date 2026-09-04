@@ -1,0 +1,6 @@
+{
+  "statusLine": {
+    "type": "command",
+    "command": "@@BIN_DIR@@/statusline-command.sh"
+  }
+}
