@@ -3,6 +3,8 @@
 Customize Claude Code settings — status line first — and keep those customizations from
 being silently dropped.
 
+![The status line in Claude Code](docs/resources/statusline-example.png)
+
 Claude Code owns `~/.claude/settings.json` and rewrites it on its own; keys you
 add by hand can disappear. So this repo has two halves:
 
@@ -10,7 +12,8 @@ add by hand can disappear. So this repo has two halves:
   like. Each one is a directory with a settings fragment plus any executables
   and resources it needs.
 - **enforcement** (`enforcement/`) — a small launchd-driven watchdog that
-  deep-merges those fragments back into `settings.json` whenever it drifts. A
+  deep-merges those fragments (combined at install time into a single
+  `settings.enforced.json`) back into `settings.json` whenever it drifts. A
   utility, not the point.
 
 ## Install
@@ -21,39 +24,6 @@ scripts/install-or-update.sh
 
 Requires `jq`, `python3` and macOS (`launchctl`). Re-run it after editing or
 adding a customization.
-
-## Layout
-
-```text
-customizations/                               what to customize
-  statusline/                                 model · dir · branch · tokens · cost
-    customization.json                        settings fragment
-    bin/statusline-command.sh
-  clear-context-on-plan-accept/               settings-only customization
-enforcement/                                  the watchdog utility
-  enforce-custom-claude-code-settings.py
-  launchagent.plist.template
-scripts/                                      install / update / maintenance
-  install-or-update.sh
-  status.sh
-  enforce-now.sh
-  logs.sh
-  uninstall.sh
-  lib/common.sh
-```
-
-Installed side, all under one ad-hoc directory:
-
-```text
-~/.claude/customizations/custom-claude-code-settings/
-  bin/         enforce-custom-claude-code-settings.py, statusline-command.sh, …
-  resources/   settings.enforced.json (built from the fragments), per-customization data
-  logs/        enforce.log, enforce.out.log, enforce.err.log
-~/Library/LaunchAgents/com.user.custom-claude-code-settings.enforce.plist
-```
-
-Nothing is written outside that directory, the LaunchAgents plist, and the
-enforced keys inside `~/.claude/settings.json`.
 
 ## Day to day
 

@@ -15,3 +15,11 @@ back — it is *not* where customizations are defined (see `../customizations/`)
 Only enforced keys are touched; anything else in `settings.json` is preserved.
 If `settings.json` is unparseable it is copied to `settings.json.broken-<ts>`
 before being rebuilt, so nothing is lost.
+
+It writes what it restored to `<install>/logs/enforce.log` (self-trimmed at
+256 KB); launchd sends the agent's stdout/stderr to `enforce.out.log` and
+`enforce.err.log` in the same directory. `scripts/logs.sh` reads all three.
+
+Paths default to the install directory the script sits in and can be overridden
+with `CUSTOM_CLAUDE_SETTINGS_TARGET`, `CUSTOM_CLAUDE_SETTINGS_ENFORCED` and
+`CUSTOM_CLAUDE_SETTINGS_LOG`.

@@ -9,16 +9,20 @@ watchdog that keeps it in place.
 ```text
 customizations/<name>/
   customization.json   required — settings fragment merged into settings.json
-  bin/                 optional — executables, installed into <install>/bin/
+  bin/                 optional — executables, installed flat into <install>/bin/
   resources/           optional — data files, installed into <install>/resources/<name>/
   README.md            optional — docs for humans
   .disabled            optional — marker file; presence skips the customization
 ```
 
+`bin/` is flattened into a single shared `<install>/bin/`, so give executables
+names unlikely to clash with another customization's.
+
 ## Placeholders
 
-`customization.json` (and any file under `resources/`) may use these
-placeholders; they are substituted at install time:
+`customization.json` and any file directly under `resources/` may use these
+placeholders; they are substituted at install time. (Subdirectories of
+`resources/` are copied verbatim — no substitution happens inside them.)
 
 | Placeholder          | Expands to                                              |
 | -------------------- | ------------------------------------------------------- |
@@ -26,8 +30,18 @@ placeholders; they are substituted at install time:
 | `@@BIN_DIR@@`        | `<install>/bin`                                         |
 | `@@RESOURCES_DIR@@`  | `<install>/resources`                                   |
 | `@@LOG_DIR@@`        | `<install>/logs`                                        |
+| `@@ENFORCED_PATH@@`  | `<install>/resources/settings.enforced.json`            |
+| `@@SETTINGS_PATH@@`  | `~/.claude/settings.json`                               |
 | `@@CLAUDE_DIR@@`     | `~/.claude`                                             |
 | `@@HOME@@`           | `~`                                                     |
+| `@@LABEL@@`          | `com.user.custom-claude-code-settings.enforce`          |
+
+`@@ENFORCED_PATH@@`, `@@SETTINGS_PATH@@` and `@@LABEL@@` exist mainly for the
+launchd template, but the same rendering is applied to customizations.
+
+`@@CLAUDE_DIR@@` and `@@INSTALL_DIR@@` follow the `CLAUDE_DIR` and
+`CUSTOM_CLAUDE_SETTINGS_HOME` environment overrides; the table shows the
+defaults.
 
 ## Adding one
 
