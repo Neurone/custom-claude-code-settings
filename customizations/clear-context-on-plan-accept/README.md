@@ -1,4 +1,4 @@
-# clear-context-on-plan-accept
+# "Clear Context on Plan Accept" proposal
 
 Offers the "clear context" option when a plan is accepted, so implementation
 starts from a clean context window.

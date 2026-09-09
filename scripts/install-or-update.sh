@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# Install or update "custom claude settings": copy every enabled customization
+# Install or update "custom claude settings": copy the selected customizations
 # into ~/.claude/customizations/custom-claude-code-settings, build the enforced
 # settings file out of their fragments, and (re)load the launchd agent that
 # keeps those keys in ~/.claude/settings.json.
+#
+# Usage: install-or-update.sh [name...]
+# With no names, every customization is installed. Naming one or more
+# customizations installs only those.
 #
 # Idempotent: safe to re-run after editing or adding a customization.
 set -euo pipefail
@@ -15,24 +19,29 @@ require_cmd python3
 require_cmd launchctl
 
 names=()
-while IFS= read -r name; do names+=("$name"); done < <(enabled_customizations)
-[[ ${#names[@]} -gt 0 ]] || die "no enabled customizations found in $CUSTOMIZATIONS_SRC"
+if [[ $# -gt 0 ]]; then
+  for name in "$@"; do
+    customization_exists "$name" || die "unknown customization: $name; available: $(available_customizations_line)"
+    names+=("$name")
+  done
+else
+  while IFS= read -r name; do names+=("$name"); done < <(all_customizations)
+fi
+[[ ${#names[@]} -gt 0 ]] || die "no customizations found in $CUSTOMIZATIONS_SRC"
 
-step "Installing into $INSTALL_DIR"
-mkdir -p "$BIN_DIR" "$RESOURCES_DIR" "$LOG_DIR"
+mkdir -p "$BIN_DIR" "$RESOURCES_DIR" "$LOG_DIR" "$BACKUP_DIR"
+ok "Installed into $INSTALL_DIR"
 
-step "Installing the enforcement utility"
 install -m 755 "$ENFORCEMENT_SRC/enforce-custom-claude-code-settings.py" "$ENFORCER"
-info "$ENFORCER"
+ok "Enforcement utility installed"
 
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
 
-step "Installing ${#names[@]} customization(s)"
 fragments=()
+extra_files=()
 for name in "${names[@]}"; do
   src="$CUSTOMIZATIONS_SRC/$name"
-  info "$name"
 
   fragment="$work_dir/$name.json"
   render_placeholders "$src/customization.json" > "$fragment"
@@ -44,7 +53,7 @@ for name in "${names[@]}"; do
     for exe in "$src/bin"/*; do
       [[ -f "$exe" ]] || continue
       install -m 755 "$exe" "$BIN_DIR/$(basename "$exe")"
-      info "  bin/$(basename "$exe")"
+      extra_files+=("bin/$(basename "$exe")")
     done
   fi
 
@@ -59,24 +68,29 @@ for name in "${names[@]}"; do
       else
         render_placeholders "$res" > "$dest/$(basename "$res")"
       fi
-      info "  resources/$name/$(basename "$res")"
+      extra_files+=("resources/$name/$(basename "$res")")
     done
   fi
 done
+extra_suffix=""
+[[ ${#extra_files[@]} -gt 0 ]] && extra_suffix=" (+$(join_by ", " "${extra_files[@]}"))"
+ok "Customizations installed: $(join_by ", " "${names[@]}")${extra_suffix}"
 
-step "Building $ENFORCED_PATH"
 # jq's `*` deep-merges objects; fragments are applied in directory-name order.
 jq -s 'reduce .[] as $fragment ({}; . * $fragment)' "${fragments[@]}" > "$work_dir/settings.enforced.json"
 mv "$work_dir/settings.enforced.json" "$ENFORCED_PATH"
 chmod 644 "$ENFORCED_PATH"
-jq -r 'paths(scalars) | join(".")' "$ENFORCED_PATH" | sed 's/^/  /'
+enforced_keys=()
+while IFS= read -r key; do enforced_keys+=("$key"); done < <(jq -r 'paths(scalars) | join(".")' "$ENFORCED_PATH")
+ok "Built settings.enforced.json (${#enforced_keys[@]} keys: $(join_by ", " "${enforced_keys[@]}"))"
 
-step "Enforcing once, before handing over to launchd"
-"$ENFORCER"
-info "settings.json now carries:"
-jq '{statusLine, showClearContextOnPlanAccept}' "$SETTINGS_PATH" 2>/dev/null | sed 's/^/  /' || true
+enforcer_output="$("$ENFORCER")"
+backup_suffix=""
+if [[ "$enforcer_output" == *"backup saved to"* ]]; then
+  backup_suffix=" (backup: $(basename "${enforcer_output#backup saved to }"))"
+fi
+ok "Enforced settings.json${backup_suffix}"
 
-step "(Re)loading $LABEL"
 mkdir -p "$LAUNCH_AGENTS_DIR"
 launchctl bootout "$SERVICE" 2>/dev/null || true
 render_placeholders "$ENFORCEMENT_SRC/launchagent.plist.template" > "$PLIST_PATH"
@@ -84,8 +98,6 @@ chmod 644 "$PLIST_PATH"
 plutil -lint "$PLIST_PATH" >/dev/null || die "rendered plist is invalid: $PLIST_PATH"
 launchctl bootstrap "$DOMAIN" "$PLIST_PATH"
 launchctl enable "$SERVICE"
-info "$PLIST_PATH"
+ok "Reloaded $LABEL"
 
-step "Done"
-info "status: scripts/status.sh"
-info "logs:   scripts/logs.sh"
+printf '\n%sStatus:%s scripts/status.sh   %sLogs:%s scripts/logs.sh\n' "$C_BOLD" "$C_RESET" "$C_BOLD" "$C_RESET"

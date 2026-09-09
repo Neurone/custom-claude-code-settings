@@ -12,7 +12,6 @@ customizations/<name>/
   bin/                 optional — executables, installed flat into <install>/bin/
   resources/           optional — data files, installed into <install>/resources/<name>/
   README.md            optional — docs for humans
-  .disabled            optional — marker file; presence skips the customization
 ```
 
 `bin/` is flattened into a single shared `<install>/bin/`, so give executables
@@ -30,6 +29,7 @@ placeholders; they are substituted at install time. (Subdirectories of
 | `@@BIN_DIR@@`        | `<install>/bin`                                         |
 | `@@RESOURCES_DIR@@`  | `<install>/resources`                                   |
 | `@@LOG_DIR@@`        | `<install>/logs`                                        |
+| `@@BACKUP_DIR@@`     | `<install>/backups`                                     |
 | `@@ENFORCED_PATH@@`  | `<install>/resources/settings.enforced.json`            |
 | `@@SETTINGS_PATH@@`  | `~/.claude/settings.json`                               |
 | `@@CLAUDE_DIR@@`     | `~/.claude`                                             |

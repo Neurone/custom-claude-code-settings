@@ -1,4 +1,4 @@
-# statusline
+# Status Line
 
 Replaces the default Claude Code status line with a compact one showing:
 model, current directory, git branch, context-window tokens and session cost.

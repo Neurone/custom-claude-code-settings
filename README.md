@@ -19,7 +19,8 @@ add by hand can disappear. So this repo has two halves:
 ## Install
 
 ```bash
-scripts/install-or-update.sh
+scripts/install-or-update.sh              # every customization
+scripts/install-or-update.sh statusline   # only the named customization(s)
 ```
 
 Requires `jq`, `python3` and macOS (`launchctl`). Re-run it after editing or
@@ -31,7 +32,8 @@ adding a customization.
 scripts/status.sh          # installed? agent loaded? settings drifted?
 scripts/logs.sh -f         # watch the watchdog
 scripts/enforce-now.sh     # re-apply right now
-scripts/uninstall.sh       # stop enforcing
+scripts/uninstall.sh       # stop enforcing everything and undo it in settings.json
+scripts/uninstall.sh statusline  # undo only the named customization(s)
 ```
 
 ## Adding a customization
@@ -46,15 +48,15 @@ scripts/install-or-update.sh
 
 Executables go in `customizations/my-thing/bin/` and are referenced from the
 fragment as `@@BIN_DIR@@/<file>`; see `customizations/README.md` for the full
-list of placeholders and for the `.disabled` marker that skips a customization.
+list of placeholders.
 
 ## How enforcement behaves
 
 - Only enforced keys are touched — everything else in `settings.json` is kept.
 - The file is rewritten only when the merge result actually differs, and always
   atomically (temp file + rename).
-- An unparseable `settings.json` is copied to `settings.json.broken-<timestamp>`
-  before being rebuilt.
+- An unparseable `settings.json` is copied to
+  `<install-dir>/backups/settings.json.broken-<timestamp>` before being rebuilt.
 - Triggers: `WatchPaths` on `settings.json` and `settings.enforced.json`, at
   load, plus a 5-minute safety net.
 

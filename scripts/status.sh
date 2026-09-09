@@ -6,36 +6,41 @@ set -uo pipefail
 # shellcheck source=SCRIPTDIR/lib/common.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/lib/common.sh"
 
-step "Customizations in the repo"
-while IFS= read -r name; do info "enabled  $name"; done < <(enabled_customizations)
-for dir in "$CUSTOMIZATIONS_SRC"/*/; do
-  [[ -f "$dir/.disabled" ]] && info "disabled $(basename "$dir")"
-done
+names=()
+while IFS= read -r name; do names+=("$name"); done < <(all_customizations)
+ok "Customizations in repo: $(join_by ", " "${names[@]}")"
 
-step "Installed files"
 if [[ -d "$INSTALL_DIR" ]]; then
-  info "$INSTALL_DIR"
-  find "$INSTALL_DIR" -mindepth 1 -maxdepth 2 -print | sed "s|^$INSTALL_DIR/|  |" | sort
+  counts=()
+  for sub in bin resources logs backups; do
+    dir="$INSTALL_DIR/$sub"
+    [[ -d "$dir" ]] || continue
+    count="$(find "$dir" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')"
+    [[ "$count" -gt 0 ]] && counts+=("$sub: $count")
+  done
+  suffix=""
+  [[ ${#counts[@]} -gt 0 ]] && suffix=" ($(join_by ", " "${counts[@]}"))"
+  ok "Installed into $INSTALL_DIR${suffix}"
 else
-  info "not installed — run scripts/install-or-update.sh"
+  warn "not installed — run scripts/install-or-update.sh"
 fi
 
-step "launchd agent ($LABEL)"
 if service_loaded; then
-  launchctl print "$SERVICE" | awk '
-    /^[[:space:]]*state =/ || /last exit code/ || /^[[:space:]]*pid =/ {print "  " $0}'
+  launchd_info="$(launchctl print "$SERVICE")"
+  agent_state="$(awk -F' = ' '/^\tstate = /{print $2; exit}' <<<"$launchd_info")"
+  exit_code="$(awk -F' = ' '/^\tlast exit code = /{print $2; exit}' <<<"$launchd_info")"
+  ok "launchd agent loaded: $LABEL (state: ${agent_state:-unknown}, exit: ${exit_code:-n/a})"
 else
-  info "not loaded"
+  warn "launchd agent not loaded: $LABEL"
 fi
-if [[ -f "$PLIST_PATH" ]]; then
-  info "plist: $PLIST_PATH"
-else
-  info "plist: missing"
-fi
+[[ -f "$PLIST_PATH" ]] || warn "plist missing: $PLIST_PATH"
 
-step "Drift check"
 if [[ -x "$ENFORCER" ]]; then
-  "$ENFORCER" --check | sed 's/^/  /'
+  if drift_output="$("$ENFORCER" --check)"; then
+    ok "$drift_output"
+  else
+    warn "$drift_output"
+  fi
 else
-  info "enforcer not installed"
+  warn "enforcer not installed"
 fi

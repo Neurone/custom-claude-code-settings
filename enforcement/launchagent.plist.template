@@ -13,6 +13,19 @@
         <string>@@BIN_DIR@@/enforce-custom-claude-code-settings.py</string>
     </array>
 
+    <!-- Pin the enforcer to the same paths the installer resolved, instead of
+         letting it re-derive $HOME/.claude on its own (they only agree when
+         CLAUDE_DIR/CUSTOM_CLAUDE_SETTINGS_HOME were never overridden). -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CUSTOM_CLAUDE_SETTINGS_TARGET</key>
+        <string>@@SETTINGS_PATH@@</string>
+        <key>CUSTOM_CLAUDE_SETTINGS_ENFORCED</key>
+        <string>@@ENFORCED_PATH@@</string>
+        <key>CUSTOM_CLAUDE_SETTINGS_LOG</key>
+        <string>@@LOG_PATH@@</string>
+    </dict>
+
     <!-- Run as soon as either file changes on disk. -->
     <key>WatchPaths</key>
     <array>

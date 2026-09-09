@@ -3,14 +3,14 @@
 Everything that touches your machine lives here; nothing else in this repo
 installs, moves or deletes files.
 
-| Script                              | What it does                                                              |
-| ----------------------------------- | ------------------------------------------------------------------------- |
-| `install-or-update.sh`              | Install/update all enabled customizations and (re)load the agent          |
-| `status.sh`                         | What is installed, agent state, and whether settings.json drifted         |
-| `enforce-now.sh`                    | Run the enforcement utility once, immediately                             |
-| `logs.sh [-f\|<lines>]`             | Show (or follow) the enforcement logs                                     |
-| `uninstall.sh [--keep-files]`       | Unload the agent and remove the install dir (`--keep-files` keeps it)     |
-| `shellcheck.sh`                     | Run `shellcheck -x` over every `*.sh` in the repo (dev only)              |
+| Script                                       | What it does                                                                          |
+| -------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `install-or-update.sh [name...]`             | Install/update the named customizations (default: all enabled) and (re)load the agent |
+| `status.sh`                                  | What is installed, agent state, and whether settings.json drifted                     |
+| `enforce-now.sh`                              | Run the enforcement utility once, immediately                                         |
+| `logs.sh [-f\|<lines>]`                      | Show (or follow) the enforcement logs                                                 |
+| `uninstall.sh [--keep-files] [name...]`      | Unload the agent, strip the named customizations' keys out of settings.json (default: all), and remove their installed files (`--keep-files` keeps the install dir). If some customizations remain, the agent is reloaded to keep enforcing them. |
+| `shellcheck.sh`                               | Run `shellcheck -x` over every `*.sh` in the repo (dev only)                           |
 
 `lib/common.sh` holds the shared paths, the `@@...@@` placeholder rendering and
 the launchd identifiers — source it, don't run it.
