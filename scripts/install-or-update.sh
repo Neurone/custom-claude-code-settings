@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install or update "custom claude settings": copy the selected customizations
 # into ~/.claude/customizations/custom-claude-code-settings, build the enforced
-# settings file out of their fragments, and (re)load the launchd agent that
+# settings file out of their fragments, and (re)load the watchdog service that
 # keeps those keys in ~/.claude/settings.json.
 #
 # Usage: install-or-update.sh [name...]
@@ -14,9 +14,9 @@ set -euo pipefail
 # shellcheck source=SCRIPTDIR/lib/common.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/lib/common.sh"
 
-require_cmd jq "brew install jq"
+require_cmd jq "$PKG_INSTALL_HINT jq"
 require_cmd python3
-require_cmd launchctl
+service_require_cmds
 
 names=()
 if [[ $# -gt 0 ]]; then
@@ -91,13 +91,15 @@ if [[ "$enforcer_output" == *"backup saved to"* ]]; then
 fi
 ok "Enforced settings.json${backup_suffix}"
 
-mkdir -p "$LAUNCH_AGENTS_DIR"
-launchctl bootout "$SERVICE" 2>/dev/null || true
-render_placeholders "$ENFORCEMENT_SRC/launchagent.plist.template" > "$PLIST_PATH"
-chmod 644 "$PLIST_PATH"
-plutil -lint "$PLIST_PATH" >/dev/null || die "rendered plist is invalid: $PLIST_PATH"
-launchctl bootstrap "$DOMAIN" "$PLIST_PATH"
-launchctl enable "$SERVICE"
-ok "Reloaded $LABEL"
+if service_install; then
+  ok "Reloaded $LABEL"
+else
+  rc=$?
+  if [[ $rc -eq 2 ]]; then
+    warn "no user service manager available — the watchdog is not running; re-apply manually with scripts/enforce-now.sh"
+  else
+    die "failed to install the watchdog service (exit $rc)"
+  fi
+fi
 
 printf '\n%sStatus:%s scripts/status.sh   %sLogs:%s scripts/logs.sh\n' "$C_BOLD" "$C_RESET" "$C_BOLD" "$C_RESET"

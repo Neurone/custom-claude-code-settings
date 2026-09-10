@@ -1,0 +1,17 @@
+[Unit]
+Description=Re-apply enforced Claude Code settings (@@LABEL@@)
+# The enforcer writes the file the .path unit watches. Harmless (it only writes
+# on a real difference, so the self-trigger costs one no-op run) but it can
+# outpace the default start rate limit, which would wedge the unit in "failed".
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=@@BIN_DIR@@/enforce-custom-claude-code-settings.py
+Environment=CUSTOM_CLAUDE_SETTINGS_TARGET=@@SETTINGS_PATH@@
+Environment=CUSTOM_CLAUDE_SETTINGS_ENFORCED=@@ENFORCED_PATH@@
+Environment=CUSTOM_CLAUDE_SETTINGS_LOG=@@LOG_PATH@@
+Environment=CUSTOM_CLAUDE_SETTINGS_BACKUP_DIR=@@BACKUP_DIR@@
+StandardOutput=append:@@LOG_DIR@@/enforce.out.log
+StandardError=append:@@LOG_DIR@@/enforce.err.log
+Nice=5

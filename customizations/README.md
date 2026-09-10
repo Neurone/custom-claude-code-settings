@@ -29,6 +29,7 @@ placeholders; they are substituted at install time. (Subdirectories of
 | `@@BIN_DIR@@`        | `<install>/bin`                                         |
 | `@@RESOURCES_DIR@@`  | `<install>/resources`                                   |
 | `@@LOG_DIR@@`        | `<install>/logs`                                        |
+| `@@LOG_PATH@@`       | `<install>/logs/enforce.log`                            |
 | `@@BACKUP_DIR@@`     | `<install>/backups`                                     |
 | `@@ENFORCED_PATH@@`  | `<install>/resources/settings.enforced.json`            |
 | `@@SETTINGS_PATH@@`  | `~/.claude/settings.json`                               |
@@ -37,7 +38,8 @@ placeholders; they are substituted at install time. (Subdirectories of
 | `@@LABEL@@`          | `com.user.custom-claude-code-settings.enforce`          |
 
 `@@ENFORCED_PATH@@`, `@@SETTINGS_PATH@@` and `@@LABEL@@` exist mainly for the
-launchd template, but the same rendering is applied to customizations.
+launchd/systemd templates, but the same rendering is applied to
+customizations.
 
 `@@CLAUDE_DIR@@` and `@@INSTALL_DIR@@` follow the `CLAUDE_DIR` and
 `CUSTOM_CLAUDE_SETTINGS_HOME` environment overrides; the table shows the

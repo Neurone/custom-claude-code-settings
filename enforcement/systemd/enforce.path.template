@@ -1,0 +1,10 @@
+[Unit]
+Description=Watch Claude Code settings for drift (@@LABEL@@)
+
+[Path]
+PathModified=@@SETTINGS_PATH@@
+PathChanged=@@ENFORCED_PATH@@
+Unit=@@LABEL@@.service
+
+[Install]
+WantedBy=default.target

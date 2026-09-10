@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# Uninstall: unload the launchd agent, then actually strip the enforced keys
-# back out of ~/.claude/settings.json (not just stop enforcing them).
+# Uninstall: unload the watchdog service, then actually strip the enforced
+# keys back out of ~/.claude/settings.json (not just stop enforcing them).
 #
 # Usage: uninstall.sh [--keep-files] [name...]
 # With no names, every customization is uninstalled: settings.json is
-# cleaned up, the agent is unloaded, and the install directory is removed
-# (unless --keep-files, which only unloads the agent).
+# cleaned up, the service is unloaded, and the install directory is removed
+# (unless --keep-files, which only unloads the service).
 # Naming one or more customizations removes only those: their keys are
-# stripped from settings.json and their files deleted, but the agent is
+# stripped from settings.json and their files deleted, but the service is
 # reloaded afterwards to keep enforcing whatever customizations remain.
 set -euo pipefail
 
 # shellcheck source=SCRIPTDIR/lib/common.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/lib/common.sh"
 
-require_cmd jq "brew install jq"
+require_cmd jq "$PKG_INSTALL_HINT jq"
 require_cmd python3
-require_cmd launchctl
+service_require_cmds
 
 keep_files=false
 names=()
@@ -46,10 +46,16 @@ while IFS= read -r name; do
   $is_removed || remaining+=("$name")
 done < <(all_customizations)
 
-if launchctl bootout "$SERVICE" 2>/dev/null; then
-  ok "Unloaded $LABEL"
-else
-  ok "$LABEL was not loaded"
+# Only a definitive uninstall (nothing left to enforce) tears the service
+# down; a partial uninstall reloads it once the remaining fragments are
+# rebuilt below, and service_reload is safe to call whether or not the
+# service is currently running.
+if [[ ${#remaining[@]} -eq 0 ]]; then
+  if service_unload; then
+    ok "Unloaded $LABEL"
+  else
+    ok "$LABEL was not loaded"
+  fi
 fi
 
 work_dir="$(mktemp -d)"
@@ -92,10 +98,6 @@ if [[ -d "$INSTALL_DIR" ]]; then
 fi
 
 if [[ ${#remaining[@]} -eq 0 ]]; then
-  if [[ -f "$PLIST_PATH" ]]; then
-    rm -f "$PLIST_PATH"
-    ok "Removed $PLIST_PATH"
-  fi
   if $keep_files; then
     ok "Kept $INSTALL_DIR (--keep-files)"
   elif [[ -d "$INSTALL_DIR" ]]; then
@@ -110,12 +112,10 @@ elif [[ -d "$INSTALL_DIR" ]]; then
   chmod 644 "$ENFORCED_PATH"
   ok "Rebuilt settings.enforced.json — still enforcing: $(join_by ", " "${remaining[@]}")"
 
-  if [[ -f "$PLIST_PATH" ]]; then
-    launchctl bootstrap "$DOMAIN" "$PLIST_PATH"
-    launchctl enable "$SERVICE"
+  if service_reload; then
     ok "Reloaded $LABEL"
   else
-    warn "$PLIST_PATH is missing, run scripts/install-or-update.sh to restore the agent"
+    warn "service files missing, run scripts/install-or-update.sh to restore the watchdog"
   fi
 else
   ok "Not installed — nothing to reload for: $(join_by ", " "${remaining[@]}")"

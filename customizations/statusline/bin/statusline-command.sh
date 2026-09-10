@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Claude Code status line: model, cwd, git branch, session tokens and cost.
 
 input=$(cat)

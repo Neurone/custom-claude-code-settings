@@ -25,15 +25,14 @@ else
   warn "not installed — run scripts/install-or-update.sh"
 fi
 
-if service_loaded; then
-  launchd_info="$(launchctl print "$SERVICE")"
-  agent_state="$(awk -F' = ' '/^\tstate = /{print $2; exit}' <<<"$launchd_info")"
-  exit_code="$(awk -F' = ' '/^\tlast exit code = /{print $2; exit}' <<<"$launchd_info")"
-  ok "launchd agent loaded: $LABEL (state: ${agent_state:-unknown}, exit: ${exit_code:-n/a})"
+if status_line="$(service_status)"; then
+  ok "$status_line"
 else
-  warn "launchd agent not loaded: $LABEL"
+  warn "$status_line"
 fi
-[[ -f "$PLIST_PATH" ]] || warn "plist missing: $PLIST_PATH"
+while IFS= read -r service_file; do
+  [[ -f "$service_file" ]] || warn "service file missing: $service_file"
+done < <(service_files)
 
 if [[ -x "$ENFORCER" ]]; then
   if drift_output="$("$ENFORCER" --check)"; then

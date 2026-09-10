@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodic Claude Code settings drift check (@@LABEL@@)
+
+[Timer]
+OnStartupSec=30s
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=default.target

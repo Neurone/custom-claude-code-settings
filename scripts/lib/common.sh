@@ -34,13 +34,10 @@ export CUSTOM_CLAUDE_SETTINGS_ENFORCED="$ENFORCED_PATH"
 export CUSTOM_CLAUDE_SETTINGS_LOG="$LOG_PATH"
 export CUSTOM_CLAUDE_SETTINGS_BACKUP_DIR="$BACKUP_DIR"
 
-# launchd
+# Service identifier. Rendered into templates as @@LABEL@@ and used as-is by
+# both backends (launchd Label, systemd unit basename), so its value must stay
+# identical across platforms.
 LABEL="${CUSTOM_CLAUDE_SETTINGS_LABEL:-com.user.custom-claude-code-settings.enforce}"
-LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
-# shellcheck disable=SC2034
-PLIST_PATH="$LAUNCH_AGENTS_DIR/$LABEL.plist"
-DOMAIN="gui/$(id -u)"
-SERVICE="$DOMAIN/$LABEL"
 
 # shellcheck disable=SC2034  # C_BOLD is used by scripts that source this file
 if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-dumb}" != "dumb" ]]; then
@@ -130,6 +127,25 @@ build_settings_fragment() {
   rm -rf "$work_dir"
 }
 
-service_loaded() {
-  launchctl print "$SERVICE" >/dev/null 2>&1
-}
+# Platform-specific service backend (launchd on macOS, systemd on Linux).
+# Contract implemented by both, this is the whole surface:
+#   service_require_cmds  die on missing hard deps
+#   service_files         print one absolute service-definition path per line
+#   service_install       render + load. rc 0 = loaded, 2 = files written but
+#                          no usable service manager
+#   service_reload        rc 0 = reloaded, 1 = service files missing
+#   service_unload        rc 0 = was loaded, 1 = was not; also removes the
+#                          service files
+#   service_status        print one human-readable line. rc 0 loaded,
+#                          1 not loaded, 2 manager unusable
+case "$(uname -s)" in
+  Darwin)
+    # shellcheck source=SCRIPTDIR/platform-darwin.sh
+    source "$(dirname -- "${BASH_SOURCE[0]}")/platform-darwin.sh"
+    ;;
+  Linux)
+    # shellcheck source=SCRIPTDIR/platform-linux.sh
+    source "$(dirname -- "${BASH_SOURCE[0]}")/platform-linux.sh"
+    ;;
+  *) die "unsupported platform: $(uname -s)" ;;
+esac

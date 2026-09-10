@@ -11,10 +11,10 @@ add by hand can disappear. So this repo has two halves:
 - **customizations** (`customizations/`) — what you want Claude Code to look
   like. Each one is a directory with a settings fragment plus any executables
   and resources it needs.
-- **enforcement** (`enforcement/`) — a small launchd-driven watchdog that
-  deep-merges those fragments (combined at install time into a single
-  `settings.enforced.json`) back into `settings.json` whenever it drifts. A
-  utility, not the point.
+- **enforcement** (`enforcement/`) — a small watchdog (`launchd` on macOS,
+  `systemd X--user` on Linux) that deep-merges those fragments (combined at
+  install time into a single `settings.enforced.json`) back into
+  `settings.json` whenever it drifts. A utility, not the point.
 
 ## Install
 
@@ -23,13 +23,17 @@ scripts/install-or-update.sh              # every customization
 scripts/install-or-update.sh statusline   # only the named customization(s)
 ```
 
-Requires `jq`, `python3` and macOS (`launchctl`). Re-run it after editing or
-adding a customization.
+Requires `jq`, `python3`, and macOS or Linux. On Linux, if no `systemd --user`
+manager is available (common in containers — one of this repo's primary
+environments), the customizations are still installed and enforced once;
+you just don't get the always-on watchdog. See `enforcement/README.md` for
+what that degradation looks like and how to keep a user manager alive on a
+headless box. Re-run the installer after editing or adding a customization.
 
 ## Day to day
 
 ```bash
-scripts/status.sh          # installed? agent loaded? settings drifted?
+scripts/status.sh          # installed? watchdog loaded? settings drifted?
 scripts/logs.sh -f         # watch the watchdog
 scripts/enforce-now.sh     # re-apply right now
 scripts/uninstall.sh       # stop enforcing everything and undo it in settings.json
@@ -57,8 +61,9 @@ list of placeholders.
   atomically (temp file + rename).
 - An unparseable `settings.json` is copied to
   `<install-dir>/backups/settings.json.broken-<timestamp>` before being rebuilt.
-- Triggers: `WatchPaths` on `settings.json` and `settings.enforced.json`, at
-  load, plus a 5-minute safety net.
+- Triggers: on `settings.json` or `settings.enforced.json` changing on disk
+  (`WatchPaths` on launchd, a `.path` unit on systemd), at load/start, plus a
+  5-minute safety net.
 
 ## Caveat
 
