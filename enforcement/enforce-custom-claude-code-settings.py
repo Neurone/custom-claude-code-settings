@@ -267,29 +267,36 @@ def main(argv):
         return 1
 
     current, error = load_json(SETTINGS_PATH)
-    already_backed_up = None
-    if current is None or not isinstance(current, dict):
+    if current is not None and not isinstance(current, dict):
+        current, error = None, "not a JSON object"
+
+    if current is None:
         if check_only:
             print("settings {} unusable ({})".format(SETTINGS_PATH, error))
             return 1
-        # Never silently discard a file we could not parse: keep a copy first.
-        if os.path.exists(SETTINGS_PATH) and error != "empty":
-            os.makedirs(BACKUP_DIR, exist_ok=True)
-            backup_name = "{}.broken-{}".format(
-                os.path.basename(SETTINGS_PATH), datetime.now().strftime("%Y%m%d-%H%M%S")
-            )
-            backup = os.path.join(BACKUP_DIR, backup_name)
+        if error in ("missing", "empty"):
+            # Nothing of value to lose: safe to start from a blank settings file.
+            log("settings {} ({}), creating it".format(SETTINGS_PATH, error))
+            current = {}
+        else:
+            # The file has content we could not parse: never touch it, since a
+            # partial rewrite would silently discard whatever it contains
+            # (hooks, model, etc.) alongside our own keys. Back it up for
+            # forensics and leave the original in place.
+            message = "settings unusable ({}), leaving {} untouched".format(error, SETTINGS_PATH)
             try:
+                os.makedirs(BACKUP_DIR, exist_ok=True)
+                backup_name = "{}.broken-{}".format(
+                    os.path.basename(SETTINGS_PATH), datetime.now().strftime("%Y%m%d-%H%M%S")
+                )
+                backup = os.path.join(BACKUP_DIR, backup_name)
                 shutil.copy2(SETTINGS_PATH, backup)
-                already_backed_up = backup
-                log("settings unusable ({}), copied to {}".format(error, backup))
+                message += "; backup saved to {}".format(backup)
                 print("backup saved to {}".format(backup))
             except OSError as exc:
-                log("settings unusable ({}), backup failed: {}".format(error, exc))
-                return 1
-        else:
-            log("settings {} ({}), creating it".format(SETTINGS_PATH, error))
-        current = {}
+                message += "; backup failed: {}".format(exc)
+            log(message)
+            return 1
 
     merged = deep_merge(current, desired)
     diffs = changed_paths(current, desired)
@@ -306,7 +313,7 @@ def main(argv):
     if merged == current:
         return 0
 
-    backup = already_backed_up or backup_existing(SETTINGS_PATH)
+    backup = backup_existing(SETTINGS_PATH)
 
     try:
         atomic_write(SETTINGS_PATH, merged)
@@ -315,7 +322,7 @@ def main(argv):
         return 1
 
     message = "restored: {}".format("; ".join(diffs) if diffs else "reordered keys")
-    if backup and backup != already_backed_up:
+    if backup:
         message += "; backup saved to {}".format(backup)
         print("backup saved to {}".format(backup))
     log(message)

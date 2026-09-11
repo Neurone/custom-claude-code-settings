@@ -34,9 +34,17 @@ this watchdog — running without a login session.
 
 Only enforced keys are touched; anything else in `settings.json` is preserved.
 Before any write, the current `settings.json` is copied to
-`<install>/backups/settings.json.bak-<ts>` (or
-`<install>/backups/settings.json.broken-<ts>` if it was unparseable) so
-nothing is lost; the backup path is printed and logged.
+`<install>/backups/settings.json.bak-<ts>`; the backup path is printed and
+logged.
+
+If `settings.json` exists but can't be parsed as a JSON object (invalid JSON,
+unreadable, or valid JSON that isn't an object), it is **never** rewritten —
+a partial rewrite could silently discard whatever it contains alongside the
+enforced keys (hooks, `model`, etc). Instead a copy is saved to
+`<install>/backups/settings.json.broken-<ts>` for forensics, the reason is
+logged, and the command exits with status 1 leaving the original file
+untouched. A missing or empty `settings.json` is not considered broken —
+there's nothing to lose — so it's created from just the enforced keys.
 
 It writes what it restored to `<install>/logs/enforce.log` (self-trimmed at
 256 KB); the watchdog sends its stdout/stderr to `enforce.out.log` and
@@ -47,3 +55,13 @@ reads all three.
 Paths default to the install directory the script sits in and can be overridden
 with `CUSTOM_CLAUDE_SETTINGS_TARGET`, `CUSTOM_CLAUDE_SETTINGS_ENFORCED`,
 `CUSTOM_CLAUDE_SETTINGS_LOG` and `CUSTOM_CLAUDE_SETTINGS_BACKUP_DIR`.
+
+## Tests
+
+`test_enforce.py` covers `enforce-custom-claude-code-settings.py`
+(missing/empty/valid/broken `settings.json`, merge behavior, `--check`).
+Run with:
+
+```python
+python3 enforcement/test_enforce.py
+```

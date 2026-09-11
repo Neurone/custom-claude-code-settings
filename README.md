@@ -59,8 +59,10 @@ list of placeholders.
 - Only enforced keys are touched — everything else in `settings.json` is kept.
 - The file is rewritten only when the merge result actually differs, and always
   atomically (temp file + rename).
-- An unparseable `settings.json` is copied to
-  `<install-dir>/backups/settings.json.broken-<timestamp>` before being rebuilt.
+- An unparseable (or non-object) `settings.json` is never rewritten: it's left
+  exactly as-is, a copy is saved to
+  `<install-dir>/backups/settings.json.broken-<timestamp>` for forensics, and
+  the reason is logged.
 - Triggers: on `settings.json` or `settings.enforced.json` changing on disk
   (`WatchPaths` on launchd, a `.path` unit on systemd), at load/start, plus a
   5-minute safety net.
