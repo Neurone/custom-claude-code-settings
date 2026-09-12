@@ -1,0 +1,4 @@
+{
+  "description": "HBAR price, 1h/24h change, last update",
+  "requires": ["statusline"]
+}

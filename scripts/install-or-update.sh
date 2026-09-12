@@ -6,7 +6,9 @@
 #
 # Usage: install-or-update.sh [name...]
 # With no names, every customization is installed. Naming one or more
-# customizations installs only those.
+# customizations installs those plus their dependencies (customization.meta.json
+# "requires"), added to whatever is already installed — it's a union, not a
+# replacement. Use uninstall.sh to shrink the installed set.
 #
 # Idempotent: safe to re-run after editing or adding a customization.
 set -euo pipefail
@@ -18,18 +20,36 @@ require_cmd jq "$PKG_INSTALL_HINT jq"
 require_cmd python3
 service_require_cmds
 
-names=()
+requested=()
 if [[ $# -gt 0 ]]; then
   for name in "$@"; do
     customization_exists "$name" || die "unknown customization: $name; available: $(available_customizations_line)"
-    names+=("$name")
+    requested+=("$name")
   done
 else
-  while IFS= read -r name; do names+=("$name"); done < <(all_customizations)
+  while IFS= read -r name; do requested+=("$name"); done < <(all_customizations)
 fi
-[[ ${#names[@]} -gt 0 ]] || die "no customizations found in $CUSTOMIZATIONS_SRC"
+[[ ${#requested[@]} -gt 0 ]] || die "no customizations found in $CUSTOMIZATIONS_SRC"
 
-mkdir -p "$BIN_DIR" "$RESOURCES_DIR" "$LOG_DIR" "$BACKUP_DIR"
+names=()
+while IFS= read -r name; do names+=("$name"); done < <(resolve_dependencies "${requested[@]}")
+if [[ $# -gt 0 ]]; then
+  for name in "${names[@]}"; do
+    list_contains "$name" "${requested[@]}" || info "pulled in dependency: $name"
+  done
+fi
+
+previously_installed=()
+while IFS= read -r name; do previously_installed+=("$name"); done < <(installed_customizations)
+union_names=("${names[@]}")
+for name in "${previously_installed[@]+"${previously_installed[@]}"}"; do
+  list_contains "$name" "${union_names[@]}" || union_names+=("$name")
+done
+final_names=()
+while IFS= read -r name; do final_names+=("$name"); done < <(resolve_dependencies "${union_names[@]}")
+names=("${final_names[@]}")
+
+mkdir -p "$BIN_DIR" "$RESOURCES_DIR" "$LOG_DIR" "$BACKUP_DIR" "$CACHE_DIR"
 ok "Installed into $INSTALL_DIR"
 
 install -m 755 "$ENFORCEMENT_SRC/enforce-custom-claude-code-settings.py" "$ENFORCER"
@@ -44,9 +64,7 @@ for name in "${names[@]}"; do
   src="$CUSTOMIZATIONS_SRC/$name"
 
   fragment="$work_dir/$name.json"
-  render_placeholders "$src/customization.json" > "$fragment"
-  jq empty "$fragment" 2>/dev/null || die "$name/customization.json is not valid JSON after rendering"
-  [[ "$(jq -r 'type' "$fragment")" = "object" ]] || die "$name/customization.json must contain a JSON object"
+  render_customization_fragment "$name" "$fragment"
   fragments+=("$fragment")
 
   if [[ -d "$src/bin" ]]; then
@@ -71,13 +89,19 @@ for name in "${names[@]}"; do
       extra_files+=("resources/$name/$(basename "$res")")
     done
   fi
+
+  mkdir -p "$LOG_DIR/$name" "$CACHE_DIR/$name"
 done
 extra_suffix=""
 [[ ${#extra_files[@]} -gt 0 ]] && extra_suffix=" (+$(join_by ", " "${extra_files[@]}"))"
 ok "Customizations installed: $(join_by ", " "${names[@]}")${extra_suffix}"
 
-# jq's `*` deep-merges objects; fragments are applied in directory-name order.
-jq -s 'reduce .[] as $fragment ({}; . * $fragment)' "${fragments[@]}" > "$work_dir/settings.enforced.json"
+write_install_manifest "${names[@]}"
+ok "Wrote install manifest ($INSTALL_MANIFEST)"
+
+# Fragments are applied in topological order (dependencies first), so a
+# customization can override keys of what it requires.
+merge_fragments "$work_dir/settings.enforced.json" "${fragments[@]}"
 mv "$work_dir/settings.enforced.json" "$ENFORCED_PATH"
 chmod 644 "$ENFORCED_PATH"
 enforced_keys=()

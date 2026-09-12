@@ -1,0 +1,4 @@
+{
+  "description": "Model, cwd, git branch, tokens, cost",
+  "requires": ["statusline"]
+}

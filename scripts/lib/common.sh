@@ -8,7 +8,7 @@ _GUARD_COMMON_SOURCED=1
 
 # Repo layout
 REPO_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-CUSTOMIZATIONS_SRC="$REPO_DIR/customizations"
+CUSTOMIZATIONS_SRC="${CUSTOM_CLAUDE_SETTINGS_CUSTOMIZATIONS:-$REPO_DIR/customizations}"
 # shellcheck disable=SC2034
 ENFORCEMENT_SRC="$REPO_DIR/enforcement"
 
@@ -20,7 +20,11 @@ RESOURCES_DIR="$INSTALL_DIR/resources"
 LOG_DIR="$INSTALL_DIR/logs"
 LOG_PATH="$LOG_DIR/enforce.log"
 BACKUP_DIR="$INSTALL_DIR/backups"
+# shellcheck disable=SC2034
+CACHE_DIR="$INSTALL_DIR/cache"
 ENFORCED_PATH="$RESOURCES_DIR/settings.enforced.json"
+# shellcheck disable=SC2034
+INSTALL_MANIFEST="$RESOURCES_DIR/installed.json"
 # shellcheck disable=SC2034
 ENFORCER="$BIN_DIR/enforce-custom-claude-code-settings.py"
 SETTINGS_PATH="$CLAUDE_DIR/settings.json"
@@ -47,7 +51,7 @@ else
 fi
 
 info() { printf '  %s\n' "$*"; }
-step() { printf '\n==> %s\n' "$*"; }
+step() { printf '= %s\n' "$*"; }
 ok()   { printf '%s\xe2\x9c\x93%s %s\n' "$C_GREEN" "$C_RESET" "$*"; }
 warn() { printf '%s!%s warning: %s\n' "$C_YELLOW" "$C_RESET" "$*" >&2; }
 die()  { printf '%s\xe2\x9c\x97%s error: %s\n' "$C_RED" "$C_RESET" "$*" >&2; exit 1; }
@@ -77,6 +81,7 @@ render_placeholders() {
     -e "s|@@LOG_DIR@@|$LOG_DIR|g" \
     -e "s|@@LOG_PATH@@|$LOG_PATH|g" \
     -e "s|@@BACKUP_DIR@@|$BACKUP_DIR|g" \
+    -e "s|@@CACHE_DIR@@|$CACHE_DIR|g" \
     -e "s|@@ENFORCED_PATH@@|$ENFORCED_PATH|g" \
     -e "s|@@SETTINGS_PATH@@|$SETTINGS_PATH|g" \
     -e "s|@@CLAUDE_DIR@@|$CLAUDE_DIR|g" \
@@ -106,6 +111,102 @@ available_customizations_line() {
   printf '%s' "${names:-none found}"
 }
 
+# True (rc 0) if ITEM is among ITEMS. Linear scan: bash 3.2 (macOS) has no
+# associative arrays, so this is the portable substitute for a set lookup.
+list_contains() {
+  local item="$1"
+  shift
+  local candidate
+  for candidate in "$@"; do
+    [[ "$candidate" = "$item" ]] && return 0
+  done
+  return 1
+}
+
+# The "description" field of NAME's optional customization.meta.json, or "".
+customization_description() {
+  local meta="$CUSTOMIZATIONS_SRC/$1/customization.meta.json"
+  [[ -f "$meta" ]] || return 0
+  jq -r '.description // ""' "$meta"
+}
+
+# The "requires" list of NAME's optional customization.meta.json, one name per
+# line; nothing if the file or the field is absent.
+customization_requires() {
+  local meta="$CUSTOMIZATIONS_SRC/$1/customization.meta.json"
+  [[ -f "$meta" ]] || return 0
+  jq -r '.requires[]? // empty' "$meta"
+}
+
+# Internal DFS helper for resolve_dependencies. Relies on bash's dynamic
+# scoping: result/visiting/visited are locals of the calling
+# resolve_dependencies invocation, not of this function.
+_resolve_dependencies_visit() {
+  local name="$1"
+  customization_exists "$name" || die "unknown customization: $name; available: $(available_customizations_line)"
+  list_contains "$name" "${visited[@]+"${visited[@]}"}" && return 0
+  list_contains "$name" "${visiting[@]+"${visiting[@]}"}" && die "dependency cycle detected involving: $name"
+  visiting+=("$name")
+  local dep
+  while IFS= read -r dep; do
+    [[ -n "$dep" ]] || continue
+    _resolve_dependencies_visit "$dep"
+  done < <(customization_requires "$name")
+  local -a remaining=()
+  local v
+  for v in "${visiting[@]+"${visiting[@]}"}"; do
+    [[ "$v" = "$name" ]] || remaining+=("$v")
+  done
+  visiting=("${remaining[@]+"${remaining[@]}"}")
+  visited+=("$name")
+  result+=("$name")
+}
+
+# Transitive closure of NAMES..., in topological order (dependencies before
+# dependents). Dies on an unknown customization or a dependency cycle.
+resolve_dependencies() {
+  local -a result=()
+  local -a visiting=()
+  local -a visited=()
+  local name
+  for name in "$@"; do
+    _resolve_dependencies_visit "$name"
+  done
+  # printf still runs its format once even with zero args (emitting a spurious
+  # blank line), so guard explicitly instead of relying on it to print nothing.
+  ((${#result[@]})) && printf '%s\n' "${result[@]}"
+  return 0
+}
+
+# Names listed in $INSTALL_MANIFEST, one per line; nothing if it doesn't exist yet.
+installed_customizations() {
+  [[ -f "$INSTALL_MANIFEST" ]] || return 0
+  jq -r '.customizations[]? // empty' "$INSTALL_MANIFEST"
+}
+
+# Overwrite $INSTALL_MANIFEST with exactly NAMES....
+write_install_manifest() {
+  mkdir -p "$RESOURCES_DIR"
+  jq -n --args '{"customizations": $ARGS.positional}' -- "$@" >"$INSTALL_MANIFEST"
+}
+
+# Render NAME's customization.json into OUT, validating it's a JSON object
+# after placeholder substitution.
+render_customization_fragment() {
+  local name="$1" out="$2"
+  render_placeholders "$CUSTOMIZATIONS_SRC/$name/customization.json" >"$out"
+  jq empty "$out" 2>/dev/null || die "$name/customization.json is not valid JSON after rendering"
+  [[ "$(jq -r 'type' "$out")" = "object" ]] || die "$name/customization.json must contain a JSON object"
+}
+
+# Deep-merge one JSON object per fragment file into a single object, written
+# to $1. Later fragments win on overlapping keys.
+merge_fragments() {
+  local out="$1"
+  shift
+  jq -s 'reduce .[] as $fragment ({}; . * $fragment)' "$@" >"$out"
+}
+
 # Render and deep-merge the customization.json of each given name into one
 # JSON object, written to $1. Later names win on overlapping keys, same rule
 # as install-or-update.sh's own merge.
@@ -118,12 +219,10 @@ build_settings_fragment() {
   local name fragment
   for name in "$@"; do
     fragment="$work_dir/$name.json"
-    render_placeholders "$CUSTOMIZATIONS_SRC/$name/customization.json" >"$fragment"
-    jq empty "$fragment" 2>/dev/null || die "$name/customization.json is not valid JSON after rendering"
-    [[ "$(jq -r 'type' "$fragment")" = "object" ]] || die "$name/customization.json must contain a JSON object"
+    render_customization_fragment "$name" "$fragment"
     fragments+=("$fragment")
   done
-  jq -s 'reduce .[] as $fragment ({}; . * $fragment)' "${fragments[@]}" >"$out"
+  merge_fragments "$out" "${fragments[@]}"
   rm -rf "$work_dir"
 }
 

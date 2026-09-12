@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for enforce-custom-claude-code-settings.py.
+"""Unit tests for enforcement/enforce-custom-claude-code-settings.py.
 
 Runs the script as a subprocess (its paths are read from environment
 variables at import time, so this is the simplest way to exercise it against
@@ -14,7 +14,8 @@ import sys
 import tempfile
 import unittest
 
-SCRIPT = os.path.join(os.path.dirname(os.path.realpath(__file__)), "enforce-custom-claude-code-settings.py")
+REPO_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+SCRIPT = os.path.join(REPO_DIR, "enforcement", "enforce-custom-claude-code-settings.py")
 
 ENFORCED_CONTENT = {
     "showClearContextOnPlanAccept": True,

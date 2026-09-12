@@ -1,0 +1,4 @@
+{
+  "description": "Middle of the chain",
+  "requires": ["base"]
+}

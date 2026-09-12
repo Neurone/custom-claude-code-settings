@@ -58,10 +58,7 @@ with `CUSTOM_CLAUDE_SETTINGS_TARGET`, `CUSTOM_CLAUDE_SETTINGS_ENFORCED`,
 
 ## Tests
 
-`test_enforce.py` covers `enforce-custom-claude-code-settings.py`
-(missing/empty/valid/broken `settings.json`, merge behavior, `--check`).
-Run with:
-
-```python
-python3 enforcement/test_enforce.py
-```
+`../tests/test_enforce.py` covers `enforce-custom-claude-code-settings.py`
+(missing/empty/valid/broken `settings.json`, merge behavior, `--check`). It
+runs alongside the rest of the suite via `python3 -m unittest discover tests`
+(see the root `README.md`).

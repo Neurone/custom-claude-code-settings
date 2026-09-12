@@ -3,12 +3,14 @@
 # keys back out of ~/.claude/settings.json (not just stop enforcing them).
 #
 # Usage: uninstall.sh [--keep-files] [name...]
-# With no names, every customization is uninstalled: settings.json is
-# cleaned up, the service is unloaded, and the install directory is removed
-# (unless --keep-files, which only unloads the service).
+# With no names, every installed customization is uninstalled: settings.json
+# is cleaned up, the service is unloaded, and the install directory is
+# removed (unless --keep-files, which only unloads the service).
 # Naming one or more customizations removes only those: their keys are
 # stripped from settings.json and their files deleted, but the service is
 # reloaded afterwards to keep enforcing whatever customizations remain.
+# Removing a customization still required by an installed dependent fails
+# with the list of dependents — no implicit cascade.
 set -euo pipefail
 
 # shellcheck source=SCRIPTDIR/lib/common.sh
@@ -28,23 +30,69 @@ for arg in "$@"; do
   fi
 done
 
-if [[ ${#names[@]} -eq 0 ]]; then
-  while IFS= read -r name; do names+=("$name"); done < <(all_customizations)
+all_installed=()
+while IFS= read -r name; do all_installed+=("$name"); done < <(installed_customizations)
+if [[ ${#all_installed[@]} -eq 0 ]]; then
+  while IFS= read -r name; do all_installed+=("$name"); done < <(all_customizations)
+  [[ ${#all_installed[@]} -gt 0 ]] && warn "no install manifest found ($INSTALL_MANIFEST) — assuming everything in the repo is installed"
 fi
-[[ ${#names[@]} -gt 0 ]] || die "no customizations found in $CUSTOMIZATIONS_SRC"
+
+# A manifest entry for a customization since deleted from the repo would
+# otherwise reach resolve_dependencies() below inside a process substitution,
+# where its die() is silently swallowed instead of aborting the script —
+# turning "keep everything else" into "nothing is left installed". Drop it
+# with a warning instead.
+valid_installed=()
+for name in "${all_installed[@]+"${all_installed[@]}"}"; do
+  if customization_exists "$name"; then
+    valid_installed+=("$name")
+  else
+    warn "installed customization no longer exists in the repo, skipping: $name"
+  fi
+done
+all_installed=("${valid_installed[@]+"${valid_installed[@]}"}")
+
+if [[ ${#names[@]} -eq 0 ]]; then
+  names=("${all_installed[@]+"${all_installed[@]}"}")
+fi
+[[ ${#names[@]} -gt 0 ]] || die "nothing installed"
 for name in "${names[@]}"; do
   customization_exists "$name" || die "unknown customization: $name; available: $(available_customizations_line)"
 done
 
 # Whatever isn't being removed should keep being enforced.
 remaining=()
-while IFS= read -r name; do
-  is_removed=false
-  for removed in "${names[@]}"; do
-    [[ "$name" = "$removed" ]] && is_removed=true && break
+for name in "${all_installed[@]+"${all_installed[@]}"}"; do
+  list_contains "$name" "${names[@]}" || remaining+=("$name")
+done
+
+# Removing a customization still required (directly or transitively) by one
+# that stays installed would silently break it — refuse instead of cascading.
+violations=()
+extra_dependents=()
+for removed in "${names[@]}"; do
+  dependents=()
+  for r in "${remaining[@]+"${remaining[@]}"}"; do
+    if grep -qx "$removed" < <(resolve_dependencies "$r"); then
+      dependents+=("$r")
+      list_contains "$r" "${extra_dependents[@]+"${extra_dependents[@]}"}" || extra_dependents+=("$r")
+    fi
   done
-  $is_removed || remaining+=("$name")
-done < <(all_customizations)
+  [[ ${#dependents[@]} -gt 0 ]] && violations+=("$removed is still required by: $(join_by ", " "${dependents[@]}")")
+done
+if [[ ${#violations[@]} -gt 0 ]]; then
+  suggested=("${names[@]}")
+  for d in "${extra_dependents[@]+"${extra_dependents[@]}"}"; do
+    list_contains "$d" "${suggested[@]}" || suggested+=("$d")
+  done
+  die "$(printf '%s; ' "${violations[@]}")remove the dependents too: scripts/uninstall.sh $(join_by " " "${suggested[@]}")"
+fi
+
+# Keep the topological order (dependencies first) so the merge below matches
+# install-or-update.sh's rule: a customization can override its dependency's keys.
+sorted_remaining=()
+while IFS= read -r name; do sorted_remaining+=("$name"); done < <(resolve_dependencies "${remaining[@]+"${remaining[@]}"}")
+remaining=("${sorted_remaining[@]+"${sorted_remaining[@]}"}")
 
 # Only a definitive uninstall (nothing left to enforce) tears the service
 # down; a partial uninstall reloads it once the remaining fragments are
@@ -91,6 +139,14 @@ if [[ -d "$INSTALL_DIR" ]]; then
       rm -rf "${RESOURCES_DIR:?}/$name"
       removed_files+=("resources/$name")
     fi
+    if [[ -d "$LOG_DIR/$name" ]]; then
+      rm -rf "${LOG_DIR:?}/$name"
+      removed_files+=("logs/$name")
+    fi
+    if [[ -d "$CACHE_DIR/$name" ]]; then
+      rm -rf "${CACHE_DIR:?}/$name"
+      removed_files+=("cache/$name")
+    fi
   done
   removed_suffix=""
   [[ ${#removed_files[@]} -gt 0 ]] && removed_suffix=" ($(join_by ", " "${removed_files[@]}"))"
@@ -99,6 +155,7 @@ fi
 
 if [[ ${#remaining[@]} -eq 0 ]]; then
   if $keep_files; then
+    [[ -d "$INSTALL_DIR" ]] && write_install_manifest
     ok "Kept $INSTALL_DIR (--keep-files)"
   elif [[ -d "$INSTALL_DIR" ]]; then
     rm -rf "$INSTALL_DIR"
@@ -110,6 +167,7 @@ elif [[ -d "$INSTALL_DIR" ]]; then
   build_settings_fragment "$work_dir/enforced.json" "${remaining[@]}"
   mv "$work_dir/enforced.json" "$ENFORCED_PATH"
   chmod 644 "$ENFORCED_PATH"
+  write_install_manifest "${remaining[@]}"
   ok "Rebuilt settings.enforced.json — still enforcing: $(join_by ", " "${remaining[@]}")"
 
   if service_reload; then

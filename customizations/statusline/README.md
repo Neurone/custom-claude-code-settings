@@ -1,25 +1,19 @@
-# Status Line
+# Status Line (host)
 
-Replaces the default Claude Code status line with a compact one showing:
-model, current directory, git branch, context-window tokens and session cost.
+Owns the `statusLine` key in `settings.json` but renders nothing on its own.
+It collects the *segments* declared by other customizations (each a
+`resources/statusline-segment.json` manifest plus an executable), sorts them
+by `order`, and joins the non-empty ones with a dim ` │ ` separator.
 
-![The status line in Claude Code](../../docs/resources/statusline-example.png)
+Installing `statusline` alone gives you an **empty status line** — install a
+segment customization such as `claude-session-info` to get the line back
+that this repo used to hard-code.
 
-- `bin/statusline-command.sh` — the status line command (needs `jq`, `awk`, `git`)
+- `bin/statusline-command.sh` — the host/renderer (needs `jq`)
 - `customization.json` — the `statusLine` settings fragment
 
-## Customizing
+Full contract for writing a segment (manifest schema, stdin payload, stdout
+rules, error handling, where segments keep logs/cache): see
+[`docs/statusline-segments.md`](docs/statusline-segments.md).
 
-Edit `bin/statusline-command.sh` and re-run `scripts/install-or-update.sh`.
-The script receives the Claude Code status payload on stdin as JSON and prints
-one line (no trailing newline). It reads `.model.display_name`,
-`.workspace.current_dir`, `.context_window.total_input_tokens`,
-`.context_window.total_output_tokens` and `.cost.total_cost_usd`, and takes the
-git branch from `current_dir`. Missing fields degrade instead of failing
-(`null`, `0`, `n/a`), so a smoke test is easiest with a realistic payload:
-
-```bash
-echo '{"model":{"display_name":"Opus 5"},"workspace":{"current_dir":"'"$PWD"'"},
-       "context_window":{"total_input_tokens":12000,"total_output_tokens":800},
-       "cost":{"total_cost_usd":0.1234}}' | ./bin/statusline-command.sh
-```
+![The status line in Claude Code](docs/resources/statusline-example.png)
