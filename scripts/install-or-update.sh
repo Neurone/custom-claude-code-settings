@@ -70,6 +70,11 @@ for name in "${names[@]}"; do
   if [[ -d "$src/bin" ]]; then
     for exe in "$src/bin"/*; do
       [[ -f "$exe" ]] || continue
+      # post-install.sh is an install-time hook, not a runtime command (see
+      # below) — keep it out of the shared, flattened bin/ so two
+      # customizations naming their hook the same way can't clobber each
+      # other there.
+      [[ "$(basename "$exe")" == "post-install.sh" ]] && continue
       install -m 755 "$exe" "$BIN_DIR/$(basename "$exe")"
       extra_files+=("bin/$(basename "$exe")")
     done
@@ -91,6 +96,15 @@ for name in "${names[@]}"; do
   fi
 
   mkdir -p "$LOG_DIR/$name" "$CACHE_DIR/$name"
+
+  # Optional install-time hook, run once right after this customization's own
+  # files are in place, with INSTALL_DIR passed as $1. Best-effort: a
+  # customization's hook is responsible for its own failure handling (e.g.
+  # hbar-addicted's swallows a failed network fetch) so one hook can't abort
+  # the rest of the install.
+  if [[ -x "$src/bin/post-install.sh" ]]; then
+    "$src/bin/post-install.sh" "$INSTALL_DIR" || warn "$name: post-install hook failed (exit $?)"
+  fi
 done
 extra_suffix=""
 [[ ${#extra_files[@]} -gt 0 ]] && extra_suffix=" (+$(join_by ", " "${extra_files[@]}"))"

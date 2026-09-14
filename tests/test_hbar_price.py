@@ -159,12 +159,74 @@ class HbarPriceFetchTestCase(unittest.TestCase):
         self.assertEqual(self.read_history(), [])
 
 
+class HbarPostInstallHookTestCase(unittest.TestCase):
+    """bin/post-install.sh: the scripts/install-or-update.sh hook that
+    populates the price history synchronously at install time (see
+    customizations/README.md's "Install-time hooks") so hbar-segment.sh's
+    first-ever render doesn't have to show "n/a"."""
+
+    POST_INSTALL = os.path.join(HBAR_BIN_DIR, "post-install.sh")
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.install_dir = os.path.join(self.tmp.name, "install")
+        os.makedirs(os.path.join(self.install_dir, "bin"))
+        shutil.copy2(self.POST_INSTALL, os.path.join(self.install_dir, "bin", "post-install.sh"))
+        os.chmod(os.path.join(self.install_dir, "bin", "post-install.sh"), 0o755)
+        shutil.copy2(FETCHER, os.path.join(self.install_dir, "bin", "hbar-price-fetch.sh"))
+        os.chmod(os.path.join(self.install_dir, "bin", "hbar-price-fetch.sh"), 0o755)
+        self.fake_bin = os.path.join(self.tmp.name, "fakebin")
+        os.makedirs(self.fake_bin)
+        self.history_path = os.path.join(self.install_dir, "cache", "hbar-addicted", "price-history.tsv")
+
+    def set_fake_curl(self, body):
+        path = os.path.join(self.fake_bin, "curl")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("#!/usr/bin/env bash\n" + body + "\n")
+        os.chmod(path, 0o755)
+
+    def run_post_install(self):
+        env = dict(os.environ)
+        env["PATH"] = self.fake_bin + os.pathsep + env["PATH"]
+        return subprocess.run(
+            [os.path.join(self.install_dir, "bin", "post-install.sh"), self.install_dir],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+
+    def read_history(self):
+        if not os.path.exists(self.history_path):
+            return []
+        with open(self.history_path, encoding="utf-8") as handle:
+            return [line.rstrip("\n").split("\t") for line in handle if line.strip()]
+
+    def test_populates_history_from_the_given_install_dir(self):
+        now = int(time.time())
+        self.set_fake_curl(
+            "cat <<'EOF'\n" + chart_response([(now, "0.07801")]) + "\nEOF"
+        )
+        result = self.run_post_install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        history = self.read_history()
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0][1], "0.07801")
+
+    def test_network_failure_exits_zero_instead_of_failing_the_install(self):
+        self.set_fake_curl('echo "connection failed" >&2; exit 7')
+        result = self.run_post_install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.read_history(), [])
+
+
 class HbarSegmentTestCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.install_dir = os.path.join(self.tmp.name, "install")
         os.makedirs(os.path.join(self.install_dir, "bin"))
+        os.makedirs(os.path.join(self.install_dir, "resources"))
         self.segment = os.path.join(self.install_dir, "bin", "hbar-segment.sh")
         shutil.copy2(SEGMENT, self.segment)
         os.chmod(self.segment, 0o755)
@@ -183,8 +245,14 @@ class HbarSegmentTestCase(unittest.TestCase):
             for epoch, price in samples:
                 handle.write("{}\t{}\n".format(epoch, price))
 
-    def run_segment(self):
-        return subprocess.run([self.segment], input="{}", capture_output=True, text=True)
+    def write_installed_customizations(self, names):
+        manifest_path = os.path.join(self.install_dir, "resources", "installed.json")
+        with open(manifest_path, "w", encoding="utf-8") as handle:
+            joined = ", ".join('"{}"'.format(name) for name in names)
+            handle.write('{{"customizations": [{}]}}'.format(joined))
+
+    def run_segment(self, payload="{}"):
+        return subprocess.run([self.segment], input=payload, capture_output=True, text=True)
 
     def test_no_history_at_all_is_rendered_as_na(self):
         result = self.run_segment()
@@ -225,6 +293,27 @@ class HbarSegmentTestCase(unittest.TestCase):
         self.write_history([(now, "0.0747")])
         result = self.run_segment()
         self.assertRegex(result.stdout, r"@\d{2}:\d{2}")
+
+    def test_standalone_mode_does_not_render_session_cost(self):
+        now = int(time.time())
+        self.write_history([(now, "0.07801")])
+        payload = '{"cost": {"total_cost_usd": 1.80479945}}'
+        result = self.run_segment(payload=payload)
+        output = strip_ansi(result.stdout)
+        self.assertRegex(output, r"@\d{2}:\d{2} HBAR \$[0-9]+\.[0-9]{5}")
+        self.assertNotIn("Cost:", output)
+        self.assertNotIn("ℏ", output)
+
+    def test_cost_prefix_is_omitted_when_claude_session_info_is_installed(self):
+        now = int(time.time())
+        self.write_history([(now, "0.07801")])
+        self.write_installed_customizations(["statusline", "claude-session-info", "hbar-addicted"])
+        payload = '{"cost": {"total_cost_usd": 1.80479945}}'
+        result = self.run_segment(payload=payload)
+        output = strip_ansi(result.stdout)
+        self.assertRegex(output, r"[0-9]+\.[0-9]{4} ℏ @\d{2}:\d{2}")
+        self.assertNotIn("Cost:", output)
+        self.assertNotIn("|", output)
 
 
 if __name__ == "__main__":

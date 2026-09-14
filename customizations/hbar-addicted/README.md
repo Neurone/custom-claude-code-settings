@@ -5,15 +5,20 @@ A `statusline` segment (see
 the HBAR/USD price, its 1h/24h change, and when it was last updated:
 
 ```text
-@14:32 HBAR $0.07470 ▼1.83% (24h) ▲0.42% (1h)
+@14:07 HBAR $0.07801 ▲2.26% (24h) ▼0.29% (1h)
 ```
+
+When `claude-session-info` is installed at the same time, this segment omits
+the `Cost: ` label to avoid duplication and prepends only `0.3847 ℏ`.
 
 - Green `▲` for a positive change, red `▼` for a negative one, gray `-` when
   the local history doesn't cover that window yet (first run, or a gap after
   the machine was off/offline for a while) — never a misleading percentage
   computed from a handful of minutes of data.
 - `@HH:MM` if the last sample is from today, `@DD/MM HH:MM` otherwise.
-- No samples at all yet ⇒ `HBAR n/a` in gray.
+- No samples at all yet ⇒ `HBAR n/a` in gray. In practice this should only be
+  visible if `bin/post-install.sh` couldn't reach the network at install
+  time (see below); otherwise the first render already has a real price.
 
 ## How it stays fresh without blocking
 
@@ -41,6 +46,12 @@ without it the retained history was trimmed right at the 24h line and the
   whatever it already has: **rendering never waits on the network.** The
   1h/24h changes come from a single `awk` pass over the history, picking the
   sample nearest to `now-3600` and `now-86400`.
+- `bin/post-install.sh` — run once by `scripts/install-or-update.sh` right
+  after install (see `customizations/README.md`'s "Install-time hooks"),
+  outside the "never block on the network" rule above: it runs the fetcher
+  synchronously so the history isn't empty by the time you first see the
+  statusline. Best-effort — a failed fetch here (e.g. offline install) just
+  leaves the segment to fall back to `n/a` plus its usual background retry.
 - `customization.json` — `{"statusLine": {"refreshInterval": 60}}`, deep-merged
   on top of `statusline`'s own fragment so the price and the `@HH:MM` stay
   current even when the session is idle. This is the reason a segment

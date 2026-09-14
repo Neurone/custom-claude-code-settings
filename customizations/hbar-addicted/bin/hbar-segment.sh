@@ -11,6 +11,7 @@ INSTALL_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 CACHE_DIR="$INSTALL_DIR/cache/hbar-addicted"
 HISTORY_PATH="$CACHE_DIR/price-history.tsv"
 FETCHER="$INSTALL_DIR/bin/hbar-price-fetch.sh"
+INSTALLED_MANIFEST_PATH="$INSTALL_DIR/resources/installed.json"
 
 TTL=300  # refetch in the background once the latest sample is older than this
 
@@ -19,6 +20,8 @@ RED='\033[2;31m'
 YELLOW='\033[2;33m'
 GREY='\033[2m'
 RESET='\033[0m'
+
+input="$(cat)"
 
 refetch_in_background() {
   [[ -x "$FETCHER" ]] && nohup "$FETCHER" >/dev/null 2>&1 &
@@ -66,8 +69,23 @@ read -r last_price last_epoch cover_1h ref_price_1h cover_24h ref_price_24h < <(
 
 price_display="$(awk -v p="$last_price" 'BEGIN { printf "$%.5f", p }')"
 
+cost_usd="$(jq -r '.cost.total_cost_usd // empty' <<<"$input" 2>/dev/null || true)"
+cost_part=""
+show_hbar_cost=false
+if [[ -f "$INSTALLED_MANIFEST_PATH" ]] && jq -e 'any(.customizations[]?; . == "claude-session-info")' "$INSTALLED_MANIFEST_PATH" >/dev/null 2>&1; then
+  show_hbar_cost=true
+fi
+if [[ -n "$cost_usd" ]] && $show_hbar_cost; then
+  cost_hbar="$(awk -v usd="$cost_usd" -v price="$last_price" 'BEGIN {
+    if (price <= 0) { print "n/a"; exit }
+    printf "%.4f", usd / price
+  }')"
+  cost_part="${GREEN}${cost_hbar} ℏ${RESET}"
+fi
+
 time_fmt='%H:%M'
-[[ "$(format_epoch "$last_epoch" '%Y-%m-%d')" != "$(date '+%Y-%m-%d')" ]] && time_fmt='%d/%m %H:%M'
+# If the last sample isn't from today, include the date in the time display.
+[[ "$(format_epoch "$last_epoch" '%Y-%m-%d')" != "$(date '+%Y-%m-%d')" ]] && time_fmt='%Y.%m.%d-%H:%M'
 time_display="@$(format_epoch "$last_epoch" "$time_fmt")"
 
 price_part="${YELLOW}HBAR ${price_display}${RESET}"
@@ -94,4 +112,8 @@ format_change() {
 change_1h="$(format_change "$cover_1h" "$ref_price_1h" "1h")"
 change_24h="$(format_change "$cover_24h" "$ref_price_24h" "24h")"
 
-printf '%b %b %b %b' "$time_part" "$price_part" "$change_24h" "$change_1h"
+if [[ -n "$cost_part" ]]; then
+  printf '%b %b %b %b %b' "$cost_part" "$time_part" "$price_part" "$change_24h" "$change_1h"
+else
+  printf '%b %b %b %b' "$time_part" "$price_part" "$change_24h" "$change_1h"
+fi

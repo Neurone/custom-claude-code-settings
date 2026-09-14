@@ -16,7 +16,8 @@ customizations/<name>/
 ```
 
 `bin/` is flattened into a single shared `<install>/bin/`, so give executables
-names unlikely to clash with another customization's.
+names unlikely to clash with another customization's — except `post-install.sh`
+(see below), which is reserved and never flattened.
 
 A customization that contributes nothing to `settings.json` of its own (for
 example a `statusline` segment that only adds a `resources/` manifest) still
@@ -57,6 +58,21 @@ of `statusline`'s own `statusLine.command`.
 If you're contributing a `statusline` segment specifically, see
 [`statusline/docs/statusline-segments.md`](statusline/docs/statusline-segments.md)
 for the full manifest/stdin/stdout contract.
+
+## Install-time hooks
+
+`bin/post-install.sh`, if present and executable, is run once by
+`scripts/install-or-update.sh` right after the rest of that customization's
+own `bin/` and `resources/` files are installed, with `INSTALL_DIR` passed as
+`$1`. It's for one-time setup a customization needs before it's first used
+(see `hbar-addicted`, which uses it to populate its price history
+synchronously so the statusline doesn't show `n/a` until the first background
+refetch completes). Unlike everything else in `bin/`, it is *not* copied into
+the shared `<install>/bin/` — it only ever runs from the source tree, so a
+name clash between two customizations' hooks can't happen. A failing hook is
+logged as a warning and does not abort the rest of the install; a
+customization should make its own hook safe to fail (e.g. swallow a network
+error) rather than relying on the installer for that.
 
 ## Placeholders
 
