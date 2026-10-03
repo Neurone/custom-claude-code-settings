@@ -27,10 +27,14 @@ segment_manifests() {
   local manifest dir order command
   for manifest in "$RESOURCES_DIR"/*/statusline-segment.json; do
     [[ -f "$manifest" ]] || continue
-    dir="$(basename "$(dirname "$manifest")")"
-    order="$(jq -r '.order // 0' "$manifest" 2>/dev/null)"
+    dir="${manifest%/statusline-segment.json}"
+    dir="${dir##*/}"
+    # One jq call per manifest; the unit separator (not whitespace to `read`)
+    # keeps an empty field from collapsing.
+    IFS=$'\x1f' read -r order command < <(
+      jq -r '[(.order // 0), (.command // "")] | map(tostring) | join("\u001f")' "$manifest" 2>/dev/null
+    )
     [[ "$order" =~ ^-?[0-9]+$ ]] || order=0
-    command="$(jq -r '.command // empty' "$manifest" 2>/dev/null)"
     [[ -n "$command" ]] || continue
     printf '%s\t%s\t%s\n' "$order" "$dir" "$command"
   done | sort -t $'\t' -k1,1n -k2,2

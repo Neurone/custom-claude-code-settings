@@ -82,7 +82,7 @@ placeholders; they are substituted at install time. (Subdirectories of
 
 | Placeholder          | Expands to                                              |
 | -------------------- | ------------------------------------------------------- |
-| `@@INSTALL_DIR@@`    | `~/.claude/customizations/custom-claude-code-settings`  |
+| `@@INSTALL_DIR@@`    | `<config dir>/customizations/custom-claude-code-settings` |
 | `@@BIN_DIR@@`        | `<install>/bin`                                         |
 | `@@RESOURCES_DIR@@`  | `<install>/resources`                                   |
 | `@@LOG_DIR@@`        | `<install>/logs`                                        |
@@ -90,8 +90,8 @@ placeholders; they are substituted at install time. (Subdirectories of
 | `@@BACKUP_DIR@@`     | `<install>/backups`                                     |
 | `@@CACHE_DIR@@`      | `<install>/cache`                                       |
 | `@@ENFORCED_PATH@@`  | `<install>/resources/settings.enforced.json`            |
-| `@@SETTINGS_PATH@@`  | `~/.claude/settings.json`                               |
-| `@@CLAUDE_DIR@@`     | `~/.claude`                                             |
+| `@@SETTINGS_PATH@@`  | `<config dir>/settings.json`                            |
+| `@@CLAUDE_DIR@@`     | `<config dir>` (`~/.claude` by default)                 |
 | `@@HOME@@`           | `~`                                                     |
 | `@@LABEL@@`          | `com.user.custom-claude-code-settings.enforce`          |
 

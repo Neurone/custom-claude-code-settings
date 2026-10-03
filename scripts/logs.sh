@@ -6,8 +6,10 @@
 #   scripts/logs.sh -f              follow the watchdog log
 #   scripts/logs.sh hbar-addicted   last 40 lines of logs/hbar-addicted/*.log
 #   scripts/logs.sh -f hbar-addicted   follow logs/hbar-addicted/*.log
-set -uo pipefail
+set -euo pipefail
 
+# shellcheck source=SCRIPTDIR/lib/select-claude-dir.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/lib/select-claude-dir.sh"
 # shellcheck source=SCRIPTDIR/lib/common.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/lib/common.sh"
 

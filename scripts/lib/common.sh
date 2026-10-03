@@ -6,6 +6,9 @@ set -euo pipefail
 [[ -n "${_GUARD_COMMON_SOURCED:-}" ]] && echo "common.sh already sourced." && return 0
 _GUARD_COMMON_SOURCED=1
 
+# shellcheck source=SCRIPTDIR/secure-ai.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/secure-ai.sh"
+
 # Repo layout
 REPO_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 CUSTOMIZATIONS_SRC="${CUSTOM_CLAUDE_SETTINGS_CUSTOMIZATIONS:-$REPO_DIR/customizations}"
@@ -13,7 +16,11 @@ CUSTOMIZATIONS_SRC="${CUSTOM_CLAUDE_SETTINGS_CUSTOMIZATIONS:-$REPO_DIR/customiza
 ENFORCEMENT_SRC="$REPO_DIR/enforcement"
 
 # Installed layout
-CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
+# CLAUDE_CONFIG_DIR is Claude Code's own variable for relocating its config
+# dir (e.g. a sandbox keeping its settings apart from the native ~/.claude).
+CLAUDE_DIR="${CLAUDE_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}"
+# watchdog_wanted compares this path, so "~/.claude/" must equal "~/.claude".
+while [[ "$CLAUDE_DIR" == */ && "$CLAUDE_DIR" != / ]]; do CLAUDE_DIR="${CLAUDE_DIR%/}"; done
 INSTALL_DIR="${CUSTOM_CLAUDE_SETTINGS_HOME:-$CLAUDE_DIR/customizations/custom-claude-code-settings}"
 BIN_DIR="$INSTALL_DIR/bin"
 RESOURCES_DIR="$INSTALL_DIR/resources"
@@ -43,6 +50,13 @@ export CUSTOM_CLAUDE_SETTINGS_BACKUP_DIR="$BACKUP_DIR"
 # identical across platforms.
 LABEL="${CUSTOM_CLAUDE_SETTINGS_LABEL:-com.user.custom-claude-code-settings.enforce}"
 
+# Only the native Claude Code rewrites its settings.json behind our back. Any
+# other config dir (secure-ai's sandbox included) gets its customizations once and
+# no watchdog.
+watchdog_wanted() {
+  [[ "$CLAUDE_DIR" == "$HOME/.claude" ]]
+}
+
 # shellcheck disable=SC2034  # C_BOLD is used by scripts that source this file
 if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-dumb}" != "dumb" ]]; then
   C_GREEN=$'\033[32m'; C_YELLOW=$'\033[33m'; C_RED=$'\033[31m'; C_BOLD=$'\033[1m'; C_RESET=$'\033[0m'
@@ -51,8 +65,7 @@ else
 fi
 
 info() { printf '  %s\n' "$*"; }
-step() { printf '= %s\n' "$*"; }
-ok()   { printf '%s\xe2\x9c\x93%s %s\n' "$C_GREEN" "$C_RESET" "$*"; }
+ok()  { printf '%s\xe2\x9c\x93%s %s\n' "$C_GREEN" "$C_RESET" "$*"; }
 warn() { printf '%s!%s warning: %s\n' "$C_YELLOW" "$C_RESET" "$*" >&2; }
 die()  { printf '%s\xe2\x9c\x97%s error: %s\n' "$C_RED" "$C_RESET" "$*" >&2; exit 1; }
 
@@ -72,21 +85,38 @@ require_cmd() {
 }
 
 # Substitute the @@...@@ placeholders available to customizations and templates.
+# All values are escaped by one sed run (backslash and & are special in an
+# `s|...|...|` replacement, | is its delimiter): this runs for every fragment,
+# resource and template of an install, so a fork per value adds up.
 render_placeholders() {
-  sed \
-    -e "s|@@LABEL@@|$LABEL|g" \
-    -e "s|@@INSTALL_DIR@@|$INSTALL_DIR|g" \
-    -e "s|@@BIN_DIR@@|$BIN_DIR|g" \
-    -e "s|@@RESOURCES_DIR@@|$RESOURCES_DIR|g" \
-    -e "s|@@LOG_DIR@@|$LOG_DIR|g" \
-    -e "s|@@LOG_PATH@@|$LOG_PATH|g" \
-    -e "s|@@BACKUP_DIR@@|$BACKUP_DIR|g" \
-    -e "s|@@CACHE_DIR@@|$CACHE_DIR|g" \
-    -e "s|@@ENFORCED_PATH@@|$ENFORCED_PATH|g" \
-    -e "s|@@SETTINGS_PATH@@|$SETTINGS_PATH|g" \
-    -e "s|@@CLAUDE_DIR@@|$CLAUDE_DIR|g" \
-    -e "s|@@HOME@@|$HOME|g" \
-    "$@"
+  local -a placeholders=(
+    LABEL INSTALL_DIR BIN_DIR RESOURCES_DIR LOG_DIR LOG_PATH BACKUP_DIR CACHE_DIR
+    ENFORCED_PATH SETTINGS_PATH CLAUDE_DIR HOME
+  )
+  local -a expressions=()
+  local placeholder escaped_value index=0
+  while IFS= read -r escaped_value; do
+    expressions+=(-e "s|@@${placeholders[index]}@@|${escaped_value}|g")
+    index=$((index + 1))
+  done < <(
+    for placeholder in "${placeholders[@]}"; do
+      printf '%s\n' "${!placeholder}"
+    done | sed -e 's/[\\&|]/\\&/g'
+  )
+  sed "${expressions[@]}" "$@"
+}
+
+# " (backup: <file name>)" when the enforcer's stdout OUTPUT reports a backup,
+# else nothing.
+backup_note() {
+  [[ "$1" == "backup saved to "* ]] || return 0
+  printf ' (backup: %s)' "$(basename "${1#backup saved to }")"
+}
+
+# Die after a failed enforcer run. The enforcer reports why only in its log,
+# which a caller capturing its output never shows.
+die_enforcement_failed() {
+  die "could not enforce $SETTINGS_PATH; last entry of $LOG_PATH: $(tail -n 1 "$LOG_PATH" 2>/dev/null)"
 }
 
 # Names of every customization directory that holds a customization.json.

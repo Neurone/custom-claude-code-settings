@@ -1,14 +1,16 @@
 # Enforcement utility
 
-Claude Code owns `~/.claude/settings.json` and rewrites it periodically, which
+Claude Code owns `<config dir>/settings.json` (`~/.claude` by default) and rewrites it periodically, which
 can silently drop customized keys. This utility is the watchdog that puts them
 back — it is *not* where customizations are defined (see `../customizations/`).
 
 - `enforce-custom-claude-code-settings.py` — deep-merges the built
-  `resources/settings.enforced.json` into `~/.claude/settings.json`, writing
+  `resources/settings.enforced.json` into `<config dir>/settings.json`, writing
   only when the result actually differs. `--check` reports drift without
   writing. `--remove FRAGMENT` does the opposite: it strips FRAGMENT's keys
   back out of `settings.json` (used by `scripts/uninstall.sh`).
+- Only `~/.claude` gets the watchdog below; any other config dir (secure-ai's
+  included) is enforced once at install time and has no service.
 - `launchd/launchagent.plist.template` — the launchd agent that runs it, on
   macOS: on `settings.json` / `settings.enforced.json` changes (`WatchPaths`),
   every 5 minutes as a safety net, and at load.

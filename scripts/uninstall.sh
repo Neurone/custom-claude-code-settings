@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Uninstall: unload the watchdog service, then actually strip the enforced
-# keys back out of ~/.claude/settings.json (not just stop enforcing them).
+# keys back out of <config dir>/settings.json (not just stop enforcing them).
 #
 # Usage: uninstall.sh [--keep-files] [name...]
 # With no names, every installed customization is uninstalled: settings.json
@@ -13,6 +13,8 @@
 # with the list of dependents — no implicit cascade.
 set -euo pipefail
 
+# shellcheck source=SCRIPTDIR/lib/select-claude-dir.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/lib/select-claude-dir.sh"
 # shellcheck source=SCRIPTDIR/lib/common.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/lib/common.sh"
 
@@ -97,8 +99,10 @@ remaining=("${sorted_remaining[@]+"${sorted_remaining[@]}"}")
 # Only a definitive uninstall (nothing left to enforce) tears the service
 # down; a partial uninstall reloads it once the remaining fragments are
 # rebuilt below, and service_reload is safe to call whether or not the
-# service is currently running.
-if [[ ${#remaining[@]} -eq 0 ]]; then
+# service is currently running. Config dirs other than ~/.claude never had
+# one, and the service is shared by label: unloading it for them would take
+# down the watchdog of a ~/.claude that stays installed.
+if [[ ${#remaining[@]} -eq 0 ]] && watchdog_wanted; then
   if service_unload; then
     ok "Unloaded $LABEL"
   else
@@ -119,11 +123,7 @@ if [[ ${#remaining[@]} -eq 0 ]] && ! $keep_files; then
   remove_backup_dir="$CLAUDE_DIR"
 fi
 remove_output="$(CUSTOM_CLAUDE_SETTINGS_BACKUP_DIR="$remove_backup_dir" python3 "$ENFORCEMENT_SRC/enforce-custom-claude-code-settings.py" --remove "$work_dir/removed.json")"
-backup_suffix=""
-if [[ "$remove_output" == *"backup saved to"* ]]; then
-  backup_suffix=" (backup: $(basename "${remove_output#backup saved to }"))"
-fi
-ok "Removed config for $(join_by ", " "${names[@]}") from settings.json${backup_suffix}"
+ok "Removed config for $(join_by ", " "${names[@]}") from settings.json$(backup_note "$remove_output")"
 
 if [[ -d "$INSTALL_DIR" ]]; then
   removed_files=()
@@ -131,6 +131,7 @@ if [[ -d "$INSTALL_DIR" ]]; then
     if [[ -d "$CUSTOMIZATIONS_SRC/$name/bin" ]]; then
       for exe in "$CUSTOMIZATIONS_SRC/$name/bin"/*; do
         [[ -f "$exe" ]] || continue
+        [[ "$(basename "$exe")" == "post-install.sh" ]] && continue
         rm -f "$BIN_DIR/$(basename "$exe")"
         removed_files+=("bin/$(basename "$exe")")
       done
@@ -170,7 +171,9 @@ elif [[ -d "$INSTALL_DIR" ]]; then
   write_install_manifest "${remaining[@]}"
   ok "Rebuilt settings.enforced.json — still enforcing: $(join_by ", " "${remaining[@]}")"
 
-  if service_reload; then
+  if ! watchdog_wanted; then
+    ok "No watchdog for $CLAUDE_DIR, nothing to reload"
+  elif service_reload; then
     ok "Reloaded $LABEL"
   else
     warn "service files missing, run scripts/install-or-update.sh to restore the watchdog"

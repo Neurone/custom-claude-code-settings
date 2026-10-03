@@ -11,7 +11,7 @@ INSTALL_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 CACHE_DIR="$INSTALL_DIR/cache/hbar-addicted"
 HISTORY_PATH="$CACHE_DIR/price-history.tsv"
 FETCHER="$INSTALL_DIR/bin/hbar-price-fetch.sh"
-INSTALLED_MANIFEST_PATH="$INSTALL_DIR/resources/installed.json"
+SESSION_INFO_RESOURCES_DIR="$INSTALL_DIR/resources/claude-session-info"
 
 TTL=300  # refetch in the background once the latest sample is older than this
 
@@ -40,7 +40,7 @@ if [[ ! -s "$HISTORY_PATH" ]]; then
   exit 0
 fi
 
-now=$(date +%s)
+read -r now today < <(date '+%s %Y-%m-%d')
 
 # Single pass over the history: latest sample, plus the ones nearest to
 # now-3600 and now-86400 (the 1h/24h reference points), and whether the
@@ -69,24 +69,27 @@ read -r last_price last_epoch cover_1h ref_price_1h cover_24h ref_price_24h < <(
 
 price_display="$(awk -v p="$last_price" 'BEGIN { printf "$%.5f", p }')"
 
-cost_usd="$(jq -r '.cost.total_cost_usd // empty' <<<"$input" 2>/dev/null || true)"
+# The session cost is only shown (in HBAR) next to claude-session-info's USD
+# one; its resources dir is the cheap "is it installed" signal on this hot path.
 cost_part=""
-show_hbar_cost=false
-if [[ -f "$INSTALLED_MANIFEST_PATH" ]] && jq -e 'any(.customizations[]?; . == "claude-session-info")' "$INSTALLED_MANIFEST_PATH" >/dev/null 2>&1; then
-  show_hbar_cost=true
-fi
-if [[ -n "$cost_usd" ]] && $show_hbar_cost; then
-  cost_hbar="$(awk -v usd="$cost_usd" -v price="$last_price" 'BEGIN {
-    if (price <= 0) { print "n/a"; exit }
-    printf "%.4f", usd / price
-  }')"
-  cost_part="${GREEN}${cost_hbar} ℏ${RESET}"
+if [[ -d "$SESSION_INFO_RESOURCES_DIR" ]]; then
+  cost_usd="$(jq -r '.cost.total_cost_usd // empty' <<<"$input" 2>/dev/null || true)"
+  if [[ -n "$cost_usd" ]]; then
+    cost_hbar="$(awk -v usd="$cost_usd" -v price="$last_price" 'BEGIN {
+      if (price <= 0) { print "n/a"; exit }
+      printf "%.4f", usd / price
+    }')"
+    cost_part="${GREEN}${cost_hbar} ℏ${RESET}"
+  fi
 fi
 
-time_fmt='%H:%M'
 # If the last sample isn't from today, include the date in the time display.
-[[ "$(format_epoch "$last_epoch" '%Y-%m-%d')" != "$(date '+%Y-%m-%d')" ]] && time_fmt='%Y.%m.%d-%H:%M'
-time_display="@$(format_epoch "$last_epoch" "$time_fmt")"
+IFS='|' read -r last_day last_time last_dated_time < <(format_epoch "$last_epoch" '%Y-%m-%d|%H:%M|%Y.%m.%d-%H:%M')
+if [[ "$last_day" == "$today" ]]; then
+  time_display="@$last_time"
+else
+  time_display="@$last_dated_time"
+fi
 
 price_part="${YELLOW}HBAR ${price_display}${RESET}"
 time_part="${GREY}${time_display}${RESET}"

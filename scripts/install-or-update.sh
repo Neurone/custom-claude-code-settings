@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Install or update "custom claude settings": copy the selected customizations
-# into ~/.claude/customizations/custom-claude-code-settings, build the enforced
-# settings file out of their fragments, and (re)load the watchdog service that
-# keeps those keys in ~/.claude/settings.json.
+# into <config dir>/customizations/custom-claude-code-settings, build the enforced
+# settings file out of their fragments, enforce them in <config dir>/settings.json
+# and, for ~/.claude only, (re)load the watchdog service that keeps them there.
+# Which config dir(s): see lib/select-claude-dir.sh (default: every existing
+# ~/.claude and ~/.secure-ai one).
 #
 # Usage: install-or-update.sh [name...]
 # With no names, every customization is installed. Naming one or more
@@ -13,6 +15,9 @@
 # Idempotent: safe to re-run after editing or adding a customization.
 set -euo pipefail
 
+ASK_CLAUDE_DIR=1
+# shellcheck source=SCRIPTDIR/lib/select-claude-dir.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/lib/select-claude-dir.sh"
 # shellcheck source=SCRIPTDIR/lib/common.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/lib/common.sh"
 
@@ -122,14 +127,12 @@ enforced_keys=()
 while IFS= read -r key; do enforced_keys+=("$key"); done < <(jq -r 'paths(scalars) | join(".")' "$ENFORCED_PATH")
 ok "Built settings.enforced.json (${#enforced_keys[@]} keys: $(join_by ", " "${enforced_keys[@]}"))"
 
-enforcer_output="$("$ENFORCER")"
-backup_suffix=""
-if [[ "$enforcer_output" == *"backup saved to"* ]]; then
-  backup_suffix=" (backup: $(basename "${enforcer_output#backup saved to }"))"
-fi
-ok "Enforced settings.json${backup_suffix}"
+enforcer_output="$("$ENFORCER")" || die_enforcement_failed
+ok "Enforced settings.json$(backup_note "$enforcer_output")"
 
-if service_install; then
+if ! watchdog_wanted; then
+  ok "No watchdog for $CLAUDE_DIR (only ~/.claude gets one); enforced once"
+elif service_install; then
   ok "Reloaded $LABEL"
 else
   rc=$?

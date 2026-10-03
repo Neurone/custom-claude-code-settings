@@ -8,14 +8,15 @@ the HBAR/USD price, its 1h/24h change, and when it was last updated:
 @14:07 HBAR $0.07801 ▲2.26% (24h) ▼0.29% (1h)
 ```
 
-When `claude-session-info` is installed at the same time, this segment omits
-the `Cost: ` label to avoid duplication and prepends only `0.3847 ℏ`.
+When `claude-session-info` is installed at the same time, this segment also
+prepends the session cost converted to HBAR (e.g. `0.3847 ℏ`), next to the USD
+cost that `claude-session-info` shows.
 
 - Green `▲` for a positive change, red `▼` for a negative one, gray `-` when
   the local history doesn't cover that window yet (first run, or a gap after
   the machine was off/offline for a while) — never a misleading percentage
   computed from a handful of minutes of data.
-- `@HH:MM` if the last sample is from today, `@DD/MM HH:MM` otherwise.
+- `@HH:MM` if the last sample is from today, `@YYYY.MM.DD-HH:MM` otherwise.
 - No samples at all yet ⇒ `HBAR n/a` in gray. In practice this should only be
   visible if `bin/post-install.sh` couldn't reach the network at install
   time (see below); otherwise the first render already has a real price.
@@ -38,7 +39,7 @@ without it the retained history was trimmed right at the 24h line and the
   per point (sorted, deduped by epoch, anything older than 24h plus the
   margin dropped), atomically (temp file + `mv`). A malformed/non-JSON
   response, a non-zero `status.error_code`, or a failed `curl` is logged to
-  `logs/hbar-addicted/price.log` and leaves the history untouched. Locked
+  `logs/hbar-addicted/price.log` and leaves the history untouched (the log is trimmed to its newest half past 256 KiB). Locked
   via an atomic `mkdir`, with a stale lock (older than 60s — a previous run
   that died) cleared automatically. Safe to run by hand for diagnosis.
 - `bin/hbar-segment.sh` — the segment. If the latest sample is older than 5
@@ -62,7 +63,8 @@ without it the retained history was trimmed right at the 24h line and the
 
 ## Requirements
 
-`curl`, `awk`, `jq` (used by `hbar-price-fetch.sh` to parse the chart JSON).
+`curl`, `awk`, `jq` (used by `hbar-price-fetch.sh` to parse the chart JSON and by
+`hbar-segment.sh` to read the session cost).
 
 ## Diagnosing
 

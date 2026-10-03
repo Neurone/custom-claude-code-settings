@@ -14,8 +14,9 @@
     </array>
 
     <!-- Pin the enforcer to the same paths the installer resolved, instead of
-         letting it re-derive $HOME/.claude on its own (they only agree when
-         CLAUDE_DIR/CUSTOM_CLAUDE_SETTINGS_HOME were never overridden). -->
+         letting it re-derive $HOME/.claude (or $CLAUDE_CONFIG_DIR) on its own
+         (they only agree when CLAUDE_DIR/CUSTOM_CLAUDE_SETTINGS_HOME were
+         never overridden). -->
     <key>EnvironmentVariables</key>
     <dict>
         <key>CUSTOM_CLAUDE_SETTINGS_TARGET</key>

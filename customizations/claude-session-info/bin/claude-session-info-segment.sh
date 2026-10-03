@@ -4,19 +4,24 @@
 
 input=$(cat)
 
-model=$(echo "$input" | jq -r '.model.display_name')
-dir=$(echo "$input" | jq -r '.workspace.current_dir')
+# One jq call for every field, joined with the unit separator: unlike a tab
+# (whitespace to `read`), it keeps empty fields from collapsing.
+IFS=$'\x1f' read -r model dir input_tokens output_tokens cost_usd < <(
+  printf '%s' "$input" | jq -r '[
+    .model.display_name,
+    .workspace.current_dir,
+    (.context_window.total_input_tokens // 0),
+    (.context_window.total_output_tokens // 0),
+    (.cost.total_cost_usd // "")
+  ] | map(tostring) | join("\u001f")'
+)
 dir_name=$(basename "$dir")
 
-# Git branch (skip optional locks so this stays fast/non-blocking)
-git_branch=""
-if git -C "$dir" --no-optional-locks rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  git_branch=$(git -C "$dir" --no-optional-locks branch --show-current 2>/dev/null)
-fi
+# Git branch (skip optional locks so this stays fast/non-blocking). Empty
+# outside a repo, so no separate "is this a repo" git call is needed.
+git_branch=$(git -C "$dir" --no-optional-locks branch --show-current 2>/dev/null)
 
 # Tokens currently in the context window (input + output)
-input_tokens=$(echo "$input" | jq -r '.context_window.total_input_tokens // 0')
-output_tokens=$(echo "$input" | jq -r '.context_window.total_output_tokens // 0')
 total_tokens=$((input_tokens + output_tokens))
 
 if [ "$total_tokens" -ge 1000 ]; then
@@ -26,7 +31,6 @@ else
 fi
 
 # Session cost in USD, if Claude Code provides it in the input
-cost_usd=$(echo "$input" | jq -r '.cost.total_cost_usd // empty')
 if [ -n "$cost_usd" ]; then
   cost_display=$(awk -v c="$cost_usd" 'BEGIN{printf "$%.4f", c}')
 else

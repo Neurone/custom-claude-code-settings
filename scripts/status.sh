@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Report what is installed, whether the agent is loaded, and whether
-# ~/.claude/settings.json currently matches the enforced customizations.
-set -uo pipefail
+# <config dir>/settings.json currently matches the enforced customizations.
+set -euo pipefail
 
+# shellcheck source=SCRIPTDIR/lib/select-claude-dir.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/lib/select-claude-dir.sh"
 # shellcheck source=SCRIPTDIR/lib/common.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/lib/common.sh"
 
@@ -28,7 +30,10 @@ fi
 name_width=0
 needs_width=0
 rows=()
-for name in "${names[@]}"; do
+# A malformed customization.meta.json makes jq fail; list that customization
+# anyway (without its description) instead of aborting the whole report.
+set +e
+for name in "${names[@]+"${names[@]}"}"; do
   requires=()
   while IFS= read -r dep; do [[ -n "$dep" ]] && requires+=("$dep"); done < <(customization_requires "$name" 2>/dev/null)
   if [[ ${#requires[@]} -eq 0 ]]; then
@@ -41,6 +46,7 @@ for name in "${names[@]}"; do
   [[ ${#name} -gt $name_width ]] && name_width=${#name}
   [[ ${#needs} -gt $needs_width ]] && needs_width=${#needs}
 done
+set -e
 
 # printf's %-*s pads by byte count, not character count, so a multi-byte
 # UTF-8 character (CHECK/CROSS are, but those are never padded, only ever
@@ -81,14 +87,18 @@ else
   warn "not installed — run scripts/install-or-update.sh"
 fi
 
-if status_line="$(service_status)"; then
-  ok "$status_line"
+if ! watchdog_wanted; then
+  info "no watchdog for $CLAUDE_DIR (only ~/.claude gets one)"
 else
-  warn "$status_line"
+  if status_line="$(service_status)"; then
+    ok "$status_line"
+  else
+    warn "$status_line"
+  fi
+  while IFS= read -r service_file; do
+    [[ -f "$service_file" ]] || warn "service file missing: $service_file"
+  done < <(service_files)
 fi
-while IFS= read -r service_file; do
-  [[ -f "$service_file" ]] || warn "service file missing: $service_file"
-done < <(service_files)
 
 if [[ -x "$ENFORCER" ]]; then
   if drift_output="$("$ENFORCER" --check)"; then

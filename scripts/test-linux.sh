@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Linux test suite for the maintenance scripts, run inside disposable
-# debian:bookworm containers via Docker so it also works from macOS. Not
-# part of scripts/shellcheck.sh's runtime checks.
+# debian:bookworm containers via Docker so it also works from macOS. Dev only.
 #
 # Three passes, each in its own container mounting the repo read-only:
 #
@@ -17,8 +16,7 @@
 #       user bus). Asserts the availability check still says "no", and that
 #       the three unit files were rendered anyway with real paths substituted.
 #
-# If Docker isn't available and this host is already Linux (e.g. running
-# inside a dev container, where Docker-in-Docker usually isn't set up), the
+# If Docker isn't available and this host is already Linux, the
 # complete test suite (Pass 1) runs directly on this host instead - it's
 # already the Linux/GNU environment Pass 1 exists to exercise, no container
 # needed. The install/uninstall verification (Pass 2/3) needs a disposable
@@ -57,7 +55,8 @@ run_pass() {
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq >/dev/null
     apt-get install -y -qq jq python3 $extra_pkgs >/dev/null
-    export CLAUDE_DIR=/root/.claude-test
+    # Only ~/.claude gets the watchdog these passes verify (see watchdog_wanted in common.sh).
+    export CLAUDE_DIR=/root/.claude
     export LABEL_FILE_BASE=com.user.custom-claude-code-settings.enforce
     $body
   "

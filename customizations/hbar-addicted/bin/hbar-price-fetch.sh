@@ -15,6 +15,9 @@ HISTORY_PATH="$CACHE_DIR/price-history.tsv"
 LOCK_DIR="$CACHE_DIR/.fetch.lock"
 
 STALE_LOCK_SECONDS=60
+# Offline, every refresh appends a failure line; keep price.log bounded the
+# same way the watchdog's enforce.log is (trim to the newest half).
+LOG_MAX_BYTES=$((256 * 1024))
 # Kept a bit past 24h: this cutoff is computed relative to fetch time, but
 # hbar-segment.sh later checks coverage against its own (later) render time,
 # so the oldest sample must still reach 24h back by then too. Without this
@@ -30,12 +33,17 @@ CHART_URL="https://api.coinmarketcap.com/data-api/v3.3/cryptocurrency/detail/cha
 mkdir -p "$CACHE_DIR" "$LOG_DIR"
 
 log_error() {
-  printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >>"$LOG_DIR/price.log"
+  local log_path="$LOG_DIR/price.log" size
+  size=$(wc -c <"$log_path" 2>/dev/null || echo 0)
+  if ((size > LOG_MAX_BYTES)); then
+    tail -c $((LOG_MAX_BYTES / 2)) "$log_path" >"$log_path.tmp" && mv "$log_path.tmp" "$log_path"
+  fi
+  printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >>"$log_path"
 }
 
 # GNU form first: GNU stat's `-f` means "filesystem status", a real flag that
 # still runs (dumping filesystem info to stdout) before failing on `%m` as a
-# bogus second file operand, so trying it second would leak that garbage into
+# bogus second file operand, so trying it first would leak that garbage into
 # our stdout instead of just failing cleanly like BSD stat's `-c` does.
 lock_mtime() {
   stat -c %Y "$LOCK_DIR" 2>/dev/null || stat -f %m "$LOCK_DIR" 2>/dev/null

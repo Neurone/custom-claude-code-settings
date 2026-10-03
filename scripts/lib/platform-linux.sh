@@ -2,15 +2,27 @@
 # systemd --user backend for the service_* contract defined in common.sh.
 # Source, don't run.
 #
-# systemd --user is unavailable in most containers (a primary environment for
-# this repo): the systemctl binary can be installed with no user manager
-# actually running. Every entry point degrades gracefully instead of dying —
+# systemd --user is unavailable in most containers: the systemctl binary can be
+# installed with no user manager actually running. Every entry point degrades
+# gracefully instead of dying —
 # service_install returns 2, service_reload/service_unload/service_status
 # return non-zero with a message — so install-or-update.sh, uninstall.sh and
 # status.sh can all still do their settings.json work.
 
+_detect_pkg_install_hint() {
+  local manager
+  for manager in "apt-get:apt-get install" "dnf:dnf install" "yum:yum install" \
+    "zypper:zypper install" "pacman:pacman -S" "apk:apk add"; do
+    if command -v "${manager%%:*}" >/dev/null 2>&1; then
+      printf '%s' "${manager#*:}"
+      return
+    fi
+  done
+  printf 'install with your package manager:'
+}
+
 # shellcheck disable=SC2034  # used by install-or-update.sh/uninstall.sh
-PKG_INSTALL_HINT="apt install"
+PKG_INSTALL_HINT="$(_detect_pkg_install_hint)"
 
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 SERVICE_UNIT="$UNIT_DIR/$LABEL.service"
@@ -78,16 +90,17 @@ service_reload() {
 }
 
 service_unload() {
-  local was_active=1
-  if _systemd_user_available && [[ -f "$PATH_UNIT" ]]; then
+  local was_active=1 manager_available=false
+  _systemd_user_available && manager_available=true
+  if $manager_available && [[ -f "$PATH_UNIT" ]]; then
     systemctl --user is-active --quiet "$LABEL.path" && was_active=0
   fi
-  if _systemd_user_available; then
+  if $manager_available; then
     systemctl --user disable --now "$LABEL.path" "$LABEL.timer" >/dev/null 2>&1 || true
     systemctl --user stop "$LABEL.service" >/dev/null 2>&1 || true
   fi
   rm -f "$SERVICE_UNIT" "$PATH_UNIT" "$TIMER_UNIT"
-  if _systemd_user_available; then
+  if $manager_available; then
     systemctl --user daemon-reload
     systemctl --user reset-failed >/dev/null 2>&1 || true
   fi

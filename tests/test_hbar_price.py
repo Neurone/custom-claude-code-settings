@@ -115,6 +115,16 @@ class HbarPriceFetchTestCase(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("curl failed (exit 7)", self.read_log())
 
+    def test_oversized_log_is_trimmed_to_its_newest_lines(self):
+        os.makedirs(os.path.dirname(self.log_path))
+        with open(self.log_path, "w", encoding="utf-8") as handle:
+            handle.write("old-line\n" * 40000)
+        self.set_fake_curl('echo "connection failed" >&2; exit 7')
+        self.run_fetch()
+        log = self.read_log()
+        self.assertLess(len(log), 256 * 1024)
+        self.assertIn("curl failed (exit 7)", log)
+
     def test_points_older_than_24h_are_dropped(self):
         now = int(time.time())
         old_epoch = now - 100000  # > 24h
@@ -245,11 +255,9 @@ class HbarSegmentTestCase(unittest.TestCase):
             for epoch, price in samples:
                 handle.write("{}\t{}\n".format(epoch, price))
 
-    def write_installed_customizations(self, names):
-        manifest_path = os.path.join(self.install_dir, "resources", "installed.json")
-        with open(manifest_path, "w", encoding="utf-8") as handle:
-            joined = ", ".join('"{}"'.format(name) for name in names)
-            handle.write('{{"customizations": [{}]}}'.format(joined))
+    def install_customization_resources(self, names):
+        for name in names:
+            os.makedirs(os.path.join(self.install_dir, "resources", name), exist_ok=True)
 
     def run_segment(self, payload="{}"):
         return subprocess.run([self.segment], input=payload, capture_output=True, text=True)
@@ -307,7 +315,7 @@ class HbarSegmentTestCase(unittest.TestCase):
     def test_cost_prefix_is_omitted_when_claude_session_info_is_installed(self):
         now = int(time.time())
         self.write_history([(now, "0.07801")])
-        self.write_installed_customizations(["statusline", "claude-session-info", "hbar-addicted"])
+        self.install_customization_resources(["claude-session-info", "hbar-addicted"])
         payload = '{"cost": {"total_cost_usd": 1.80479945}}'
         result = self.run_segment(payload=payload)
         output = strip_ansi(result.stdout)

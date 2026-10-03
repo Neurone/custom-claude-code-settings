@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keep the customized keys present in ~/.claude/settings.json.
+"""Keep the customized keys present in <config dir>/settings.json.
 
 This is the watchdog half of "custom claude settings": the customizations
 themselves live in <install-dir>/resources/settings.enforced.json (built by
@@ -17,7 +17,7 @@ Layout, all relative to the directory this script is installed into
     CUSTOM_CLAUDE_SETTINGS_ENFORCED    <install-dir>/resources/settings.enforced.json
     CUSTOM_CLAUDE_SETTINGS_LOG         <install-dir>/logs/enforce.log
     CUSTOM_CLAUDE_SETTINGS_BACKUP_DIR  <install-dir>/backups
-    CUSTOM_CLAUDE_SETTINGS_TARGET      ~/.claude/settings.json
+    CUSTOM_CLAUDE_SETTINGS_TARGET      $CLAUDE_CONFIG_DIR/settings.json (default ~/.claude)
 
 Usage:
     enforce-custom-claude-code-settings.py                 enforce, writing if needed
@@ -36,8 +36,9 @@ from datetime import datetime
 HOME = os.path.expanduser("~")
 INSTALL_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
+CLAUDE_CONFIG_DIR = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(HOME, ".claude")
 SETTINGS_PATH = os.environ.get(
-    "CUSTOM_CLAUDE_SETTINGS_TARGET", os.path.join(HOME, ".claude", "settings.json")
+    "CUSTOM_CLAUDE_SETTINGS_TARGET", os.path.join(CLAUDE_CONFIG_DIR, "settings.json")
 )
 ENFORCED_PATH = os.environ.get(
     "CUSTOM_CLAUDE_SETTINGS_ENFORCED",
@@ -152,16 +153,18 @@ def changed_paths(current, desired, prefix=""):
     return diffs
 
 
-def backup_existing(path):
-    """Copy path to a timestamped backup in BACKUP_DIR before it gets overwritten.
+def backup_existing(path, kind="bak"):
+    """Copy path to a timestamped backup in BACKUP_DIR (<name>.<kind>-<timestamp>).
 
-    Returns the backup path, or None if there was nothing to back up.
+    kind is "bak" for a file about to be overwritten, "broken" for one that
+    could not be parsed. Returns the backup path, or None if there was nothing
+    to back up.
     """
     if not os.path.exists(path):
         return None
     os.makedirs(BACKUP_DIR, exist_ok=True)
-    backup_name = "{}.bak-{}".format(
-        os.path.basename(path), datetime.now().strftime("%Y%m%d-%H%M%S")
+    backup_name = "{}.{}-{}".format(
+        os.path.basename(path), kind, datetime.now().strftime("%Y%m%d-%H%M%S")
     )
     backup = os.path.join(BACKUP_DIR, backup_name)
     shutil.copy2(path, backup)
@@ -285,12 +288,7 @@ def main(argv):
             # forensics and leave the original in place.
             message = "settings unusable ({}), leaving {} untouched".format(error, SETTINGS_PATH)
             try:
-                os.makedirs(BACKUP_DIR, exist_ok=True)
-                backup_name = "{}.broken-{}".format(
-                    os.path.basename(SETTINGS_PATH), datetime.now().strftime("%Y%m%d-%H%M%S")
-                )
-                backup = os.path.join(BACKUP_DIR, backup_name)
-                shutil.copy2(SETTINGS_PATH, backup)
+                backup = backup_existing(SETTINGS_PATH, "broken")
                 message += "; backup saved to {}".format(backup)
                 print("backup saved to {}".format(backup))
             except OSError as exc:

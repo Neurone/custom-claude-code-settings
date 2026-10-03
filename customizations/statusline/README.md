@@ -6,8 +6,7 @@ It collects the *segments* declared by other customizations (each a
 by `order`, and joins the non-empty ones with a dim ` │ ` separator.
 
 Installing `statusline` alone gives you an **empty status line** — install a
-segment customization such as `claude-session-info` to get the line back
-that this repo used to hard-code.
+segment customization such as `claude-session-info` to see something.
 
 - `bin/statusline-command.sh` — the host/renderer (needs `jq`)
 - `customization.json` — the `statusLine` settings fragment
